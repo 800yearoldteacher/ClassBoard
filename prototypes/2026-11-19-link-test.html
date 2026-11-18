@@ -104,7 +104,8 @@
 
 <section id="app" hidden>
   <header id="bar" hidden>
-    <div class="grp"><span class="dot" id="wdot"></span><span id="wconn">연결 중</span></div>
+    <div class="grp"><span class="dot" id="wdot"></span><span id="wconn">연결 중</span> · <span id="wbrowser"></span></div>
+    <div class="grp"><button id="desync">저지연</button></div>
     <div class="grp">방 <code id="wroom">-</code><button id="copy">보기 주소 복사</button></div>
     <div class="grp" id="swatches"></div>
     <div class="grp">왕복 시간 <span class="num" id="rtt">아직 없음</span></div>
@@ -118,7 +119,7 @@
 
 <aside id="vpanel" hidden>
   <div class="head"><span class="dot" id="vdot"></span><span id="vconn">연결 중</span></div>
-  <div>방 <code id="vroom">-</code></div>
+  <div>방 <code id="vroom">-</code> · <span id="vbrowser"></span></div>
   <div class="num" id="vcounts"></div>
   <div class="row">
     <button id="tryWrite">쓰기 시도</button>
@@ -175,10 +176,37 @@ const arr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
 
 /* ---------- 칠판 그리기 ---------- */
-const board = $('board'), baseCv = $('base'), liveCv = $('live');
+const board = $('board'), baseCv = $('base');
 const baseCtx = baseCv.getContext('2d');
-const liveCtx = liveCv.getContext('2d', { desynchronized: true });
+let liveCv = $('live'), liveCtx = liveCv.getContext('2d');
+let desyncWanted = false, desyncApplied = false;   // 저지연 화면은 쓰기 화면에서만 켭니다
 let W = 0, H = 0;
+
+/* 진행 중 층은 0-A 시험 페이지처럼 칠판이 보이는 상태에서, 크기가 바뀔 때마다 새로 만듭니다.
+   숨긴 상태에서 만든 저지연 캔버스의 크기를 바꾸면 안드로이드 웨일에서 칠판 전체가 검게 덮였습니다. */
+function createLive(w, h, dpr) {
+  const c = document.createElement('canvas');
+  c.id = 'live';
+  let ctx = null;
+  try { ctx = c.getContext('2d', desyncWanted ? { desynchronized: true } : undefined); } catch (_) { ctx = null; }
+  if (!ctx) ctx = c.getContext('2d');
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  liveCv.replaceWith(c);
+  liveCv = c; liveCtx = ctx;
+  try { desyncApplied = !!(ctx.getContextAttributes && ctx.getContextAttributes().desynchronized); } catch (_) { desyncApplied = false; }
+  const label = $('desync');
+  if (label) label.textContent = desyncWanted ? `저지연 켬(${desyncApplied ? '적용됨' : '적용 안 됨'})` : '저지연 끔';
+}
+function browserName() {
+  const ua = navigator.userAgent;
+  let m;
+  if ((m = ua.match(/Whale\/([\d.]+)/))) return `웨일 ${m[1]}`;
+  if ((m = ua.match(/SamsungBrowser\/([\d.]+)/))) return `삼성 인터넷 ${m[1]}`;
+  if ((m = ua.match(/Edg\/(\d+)/))) return `엣지 ${m[1]}`;
+  if ((m = ua.match(/Chrome\/(\d+)/))) return `크롬 ${m[1]}`;
+  return '알 수 없는 브라우저';
+}
 const strokes = new Map();          // 다 그은 선
 let liveSources = () => [];         // 그리는 중인 선 목록(쓰기·보기 화면이 각자 정합니다)
 
@@ -209,10 +237,9 @@ function fit() {
   if (!w || !h) return;
   board.style.width = w + 'px'; board.style.height = h + 'px';
   const dpr = window.devicePixelRatio || 1;
-  for (const [cv, ctx] of [[baseCv, baseCtx], [liveCv, liveCtx]]) {
-    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
+  baseCv.width = Math.round(w * dpr); baseCv.height = Math.round(h * dpr);
+  baseCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  createLive(w, h, dpr);
   W = w; H = h;
   redrawBase(); redrawLive();
 }
@@ -236,6 +263,11 @@ async function start() {
     toast('익명 로그인에 실패했습니다. Firebase 콘솔에서 익명 로그인이 켜져 있는지 확인합니다.');
     console.error(e);
     return;
+  }
+  if (MODE === 'write') {
+    let saved = null;
+    try { saved = localStorage.getItem('classboard-linktest-desync'); } catch (_) { /* 무시합니다 */ }
+    desyncWanted = saved !== '0';   // 기본값은 켬(0-A 결정)
   }
   $('app').hidden = false;
   new ResizeObserver(fit).observe($('stage'));
@@ -275,6 +307,7 @@ async function claimRoom(code) {
 
 async function startWriter() {
   $('bar').hidden = false;
+  $('wbrowser').textContent = browserName();
   watchConnection('wdot', 'wconn');
   try { room = await claimRoom(localStorage.getItem(ROOM_KEY)); }
   catch (e) { writeError(e); return; }
@@ -338,6 +371,13 @@ async function startWriter() {
   /* 펜 입력 */
   let penSeen = false, active = null, timer = 0, rect = null;
   liveSources = () => (active ? [active] : []);
+
+  $('desync').onclick = () => {
+    if (active) return;
+    desyncWanted = !desyncWanted;
+    try { localStorage.setItem('classboard-linktest-desync', desyncWanted ? '1' : '0'); } catch (_) { /* 무시합니다 */ }
+    fit();
+  };
 
   function addPoint(ev) {
     if (ev.pointerType === 'pen' && ev.pressure === 0) return;   // 필압 0인 점은 버립니다(0-A 결과)
@@ -428,6 +468,7 @@ function startViewer() {
   $('vpanel').hidden = false;
   if (!CODE_RE.test(room || '')) { $('vconn').textContent = '방 코드가 올바르지 않습니다.'; return; }
   $('vroom').textContent = room;
+  $('vbrowser').textContent = browserName();
   watchConnection('vdot', 'vconn');
 
   const base = `rooms/${room}`;
