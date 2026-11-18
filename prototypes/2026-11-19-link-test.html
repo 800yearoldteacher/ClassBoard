@@ -434,8 +434,11 @@ function startViewer() {
   const live = new Map();
   liveSources = () => live.values();
 
+  let isOwner = false;
   onValue(ref(db, `${base}/meta`), (s) => {
+    isOwner = s.exists() && s.val().owner === uid;
     if (!s.exists()) $('vresult').innerHTML = '<span class="warn">방이 아직 없거나 지워졌습니다. 태블릿의 보기 주소를 확인합니다.</span>';
+    else if (isOwner) $('vresult').innerHTML = '<span class="warn">이 브라우저가 방을 만든 기기입니다. \'쓰기 시도\'는 다른 기기에서 해야 정확합니다.</span>';
   });
 
   function ack(s, n) {
@@ -473,6 +476,7 @@ function startViewer() {
   /* 보안 규칙 확인: 이 PC는 방 주인이 아니므로 아래 쓰기가 모두 막혀야 합니다. */
   $('tryWrite').onclick = async () => {
     const out = $('vresult');
+    if (isOwner) { out.innerHTML = '<span class="warn">이 브라우저가 방 주인이라 쓰기가 허용됩니다. 교실 PC처럼 다른 기기에서 시험합니다.</span>'; return; }
     out.textContent = '쓰기를 시도하는 중입니다…';
     const tests = [
       ['선 쓰기', () => set(ref(db, `${base}/strokes/intruder-test`), { color: '#ff0000', w: 0.01, pts: [[0.1, 0.1, 0.5], [0.9, 0.9, 0.5]] })],
