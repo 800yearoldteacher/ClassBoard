@@ -271,6 +271,7 @@ async function start() {
   }
   $('app').hidden = false;
   new ResizeObserver(fit).observe($('stage'));
+  fit();   // 화면이 가려져 있어 크기 감지가 늦게 오는 경우에도 바로 칠판을 맞춥니다
   if (MODE === 'write') startWriter(); else startViewer();
 }
 
