@@ -99,3 +99,9 @@ ClassBoard/
 - 태블릿 시험은 GitHub Pages의 HTTPS 주소에서 합니다. 펜 입력을 촘촘하게 받는 기능처럼 보안 연결에서만 작동하는 기능이 있습니다.
 - 단계가 끝나면 계획 문서의 완료 기준을 하나씩 확인한 결과를 표로 보고합니다.
 - 배포 주소와 Firebase 프로젝트 이름이 정해지면 이 절에 적습니다.
+- 저장소: https://github.com/800yearoldteacher/ClassBoard (공개, 기본 가지 `main`)
+- 배포 주소: https://800yearoldteacher.github.io/ClassBoard/ (0-B까지는 `main` 가지 그대로 배포하고, 1단계에서 GitHub Actions 배포로 바꿉니다)
+- 0-A 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-18-pen-test.html
+- 0-B 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-19-link-test.html
+- 커밋 작성자 이메일은 이 저장소에서만 GitHub 비공개용 주소(noreply)로 설정해 두었습니다.
+- Firebase 프로젝트 이름: (0-B에서 정함)
