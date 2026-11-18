@@ -179,24 +179,38 @@ const r5 = (n) => Math.round(n * 1e5) / 1e5;
 const board = $('board'), baseCv = $('base');
 const baseCtx = baseCv.getContext('2d');
 let liveCv = $('live'), liveCtx = liveCv.getContext('2d');
-let desyncWanted = false, desyncApplied = false;   // 저지연 화면은 쓰기 화면에서만 켭니다
+/* 저지연 화면 방식(쓰기 화면에서만 씁니다)
+   off    : 일반 캔버스
+   on     : 투명한 저지연 캔버스. 갤럭시탭 S11 울트라의 크롬·웨일에서 투명한 곳이 검게 나와 칠판을 가렸습니다.
+   opaque : 불투명한 저지연 캔버스. 칠판 바탕과 다 그은 선을 복사해 두고, 그리는 중인 선만 덧그립니다. */
+const DESYNC_MODES = ['off', 'on', 'opaque'];
+const DESYNC_LABEL = { off: '끔', on: '켬(투명)', opaque: '불투명' };
+const BOARD_BG = '#1d3b2f';         // CSS의 --board와 같은 색
+let desyncMode = 'off', desyncApplied = false;
+const liveOpaque = () => desyncMode === 'opaque';
 let W = 0, H = 0;
 
-/* 진행 중 층은 0-A 시험 페이지처럼 칠판이 보이는 상태에서, 크기가 바뀔 때마다 새로 만듭니다.
-   숨긴 상태에서 만든 저지연 캔버스의 크기를 바꾸면 안드로이드 웨일에서 칠판 전체가 검게 덮였습니다. */
+/* 진행 중 층은 칠판이 보이는 상태에서, 크기나 방식이 바뀔 때마다 새로 만듭니다. */
 function createLive(w, h, dpr) {
   const c = document.createElement('canvas');
   c.id = 'live';
+  const opts = desyncMode === 'on' ? { desynchronized: true }
+    : desyncMode === 'opaque' ? { desynchronized: true, alpha: false } : undefined;
   let ctx = null;
-  try { ctx = c.getContext('2d', desyncWanted ? { desynchronized: true } : undefined); } catch (_) { ctx = null; }
+  try { ctx = c.getContext('2d', opts); } catch (_) { ctx = null; }
   if (!ctx) ctx = c.getContext('2d');
   c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   liveCv.replaceWith(c);
   liveCv = c; liveCtx = ctx;
-  try { desyncApplied = !!(ctx.getContextAttributes && ctx.getContextAttributes().desynchronized); } catch (_) { desyncApplied = false; }
+  let at = null;
+  try { at = ctx.getContextAttributes ? ctx.getContextAttributes() : null; } catch (_) { at = null; }
+  desyncApplied = !!(at && at.desynchronized);
   const label = $('desync');
-  if (label) label.textContent = desyncWanted ? `저지연 켬(${desyncApplied ? '적용됨' : '적용 안 됨'})` : '저지연 끔';
+  if (label) {
+    label.textContent = desyncMode === 'off' ? '저지연: 끔'
+      : `저지연: ${DESYNC_LABEL[desyncMode]}(${desyncApplied ? '적용됨' : '적용 안 됨'})`;
+  }
 }
 function browserName() {
   const ua = navigator.userAgent;
@@ -224,9 +238,22 @@ function drawStroke(ctx, s) { drawPts(ctx, arr(s.pts), s.color || '#fff', s.w ||
 function redrawBase() {
   baseCtx.clearRect(0, 0, W, H);
   for (const s of strokes.values()) drawStroke(baseCtx, s);
+  if (liveOpaque()) redrawLive();
+}
+function addStroke(key, s) {   // 다 그은 선 하나를 판서층에 더합니다
+  strokes.set(key, s);
+  drawStroke(baseCtx, s);
+  if (liveOpaque()) redrawLive();
 }
 function redrawLive() {
-  liveCtx.clearRect(0, 0, W, H);
+  if (liveOpaque()) {
+    // 불투명 층은 아래 층이 비쳐 보이지 않으므로, 칠판 바탕과 판서층을 먼저 복사합니다.
+    liveCtx.fillStyle = BOARD_BG;
+    liveCtx.fillRect(0, 0, W, H);
+    if (baseCv.width) liveCtx.drawImage(baseCv, 0, 0, W, H);
+  } else {
+    liveCtx.clearRect(0, 0, W, H);
+  }
   for (const s of liveSources()) drawPts(liveCtx, s.pts, s.color, s.w, null);
 }
 function fit() {
@@ -241,7 +268,8 @@ function fit() {
   baseCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   createLive(w, h, dpr);
   W = w; H = h;
-  redrawBase(); redrawLive();
+  redrawBase();
+  if (!liveOpaque()) redrawLive();
 }
 
 function watchConnection(dot, label) {
@@ -266,8 +294,8 @@ async function start() {
   }
   if (MODE === 'write') {
     let saved = null;
-    try { saved = localStorage.getItem('classboard-linktest-desync'); } catch (_) { /* 무시합니다 */ }
-    desyncWanted = saved !== '0';   // 기본값은 켬(0-A 결정)
+    try { saved = localStorage.getItem('classboard-linktest-desync-mode'); } catch (_) { /* 무시합니다 */ }
+    desyncMode = DESYNC_MODES.includes(saved) ? saved : 'opaque';   // 이번 시험의 기본값은 불투명
   }
   $('app').hidden = false;
   new ResizeObserver(fit).observe($('stage'));
@@ -330,7 +358,7 @@ async function startWriter() {
 
   /* 다 그은 선은 데이터베이스를 통해 그립니다(다시 열어도 남아 있습니다). */
   const strokesRef = ref(db, `rooms/${room}/strokes`);
-  onChildAdded(strokesRef, (s) => { strokes.set(s.key, s.val()); drawStroke(baseCtx, s.val()); showCounts(); });
+  onChildAdded(strokesRef, (s) => { addStroke(s.key, s.val()); showCounts(); });
   onChildRemoved(strokesRef, (s) => { strokes.delete(s.key); redrawBase(); showCounts(); });
 
   /* PC가 돌려보내는 확인 표시로 왕복 시간을 잽니다. 기기마다 시계가 달라서 한쪽 시간은 재지 않습니다. */
@@ -375,8 +403,8 @@ async function startWriter() {
 
   $('desync').onclick = () => {
     if (active) return;
-    desyncWanted = !desyncWanted;
-    try { localStorage.setItem('classboard-linktest-desync', desyncWanted ? '1' : '0'); } catch (_) { /* 무시합니다 */ }
+    desyncMode = DESYNC_MODES[(DESYNC_MODES.indexOf(desyncMode) + 1) % DESYNC_MODES.length];   // 끔 → 켬 → 불투명 순서로 바뀝니다
+    try { localStorage.setItem('classboard-linktest-desync-mode', desyncMode); } catch (_) { /* 무시합니다 */ }
     fit();
   };
 
@@ -508,7 +536,7 @@ function startViewer() {
     redrawLive(); showCounts();
   });
   onChildAdded(ref(db, `${base}/strokes`), (s) => {
-    strokes.set(s.key, s.val()); drawStroke(baseCtx, s.val()); showCounts(); ackTotalSoon();
+    addStroke(s.key, s.val()); showCounts(); ackTotalSoon();
   });
   onChildRemoved(ref(db, `${base}/strokes`), (s) => {
     strokes.delete(s.key); redrawBase(); showCounts(); ackTotalSoon();
