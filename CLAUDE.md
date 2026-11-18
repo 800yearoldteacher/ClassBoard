@@ -104,4 +104,5 @@ ClassBoard/
 - 0-A 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-18-pen-test.html
 - 0-B 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-19-link-test.html
 - 커밋 작성자 이메일은 이 저장소에서만 GitHub 비공개용 주소(noreply)로 설정해 두었습니다.
-- Firebase 프로젝트 이름: (0-B에서 정함)
+- Firebase 프로젝트: `classboard-a6373`, Realtime Database 위치 asia-southeast1(싱가포르), 익명 로그인 켬
+- 보안 규칙은 `database.rules.json`이 원본입니다. 고치면 Firebase 콘솔의 Realtime Database → 규칙에 붙여 넣고 게시합니다.

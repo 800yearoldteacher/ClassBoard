@@ -139,7 +139,15 @@ import {
 
 /* Firebase 콘솔 > 프로젝트 설정 > 내 앱의 firebaseConfig를 붙여 넣습니다.
    이 값은 공개되어도 되는 값이며, 쓰기 권한은 database.rules.json의 보안 규칙이 막습니다. */
-const firebaseConfig = null;
+const firebaseConfig = {
+  apiKey: 'AIzaSyB3JRlgKQfgkT27jUlEfpOpq9BoZdXEk4o',
+  authDomain: 'classboard-a6373.firebaseapp.com',
+  databaseURL: 'https://classboard-a6373-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'classboard-a6373',
+  storageBucket: 'classboard-a6373.firebasestorage.app',
+  messagingSenderId: '460091129790',
+  appId: '1:460091129790:web:495418984a8abc0218c3ef',
+};
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.hash.slice(1));
