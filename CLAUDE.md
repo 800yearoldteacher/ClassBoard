@@ -77,10 +77,14 @@ ClassBoard/
 ├─ docs/             계획 문서, 스케치, 결정 기록
 ├─ prototypes/       0단계 시험 페이지
 ├─ database.rules.json  Firebase Realtime Database 보안 규칙(콘솔에 붙여 넣는 원본)
-├─ index.html        (1단계에서 생성) 판서 화면
+├─ index.html        판서 화면
 ├─ view.html         (4단계에서 생성) 교실 PC 보기 화면
-├─ src/              (1단계에서 생성) 앱 코드
-└─ public/           (1단계에서 생성) 아이콘, 앱 정보 파일
+├─ src/              앱 코드(layout.js 배치, board/ 캔버스, ui/ 메뉴·서랍)
+├─ public/           아이콘
+├─ scripts/          아이콘 만들기 같은 보조 스크립트
+├─ .github/workflows/ 자동 배포
+├─ package.json      라이브러리 목록과 실행 명령
+└─ vite.config.js    빌드·설치형 앱 설정
 ```
 
 1단계에서 Vite 프로젝트를 만들 때 기존 `docs/`, `prototypes/`, `CLAUDE.md`는 그대로 둡니다.
@@ -89,7 +93,7 @@ ClassBoard/
 
 - [x] 2026-11-18 계획 확정
 - [x] 2026-11-19 0-A 필기 시험 완료: 크롬(최신 판), 예측 그리기 끔으로 정했습니다. 띠 높이 실측은 1단계에서 합니다(계획 문서 13절).
-- [ ] 0-B 연결 시험: 시험 페이지 배포와 1차 시험 완료. 학교 와이파이와 교실 PC 사이의 시험이 남았습니다(계획 문서 9절).
+- [x] 2026-11-19 0-B 연결 시험: 1차 시험(학교 밖 네트워크)으로 마쳤습니다. 학교망 확인은 1단계 앱을 교실에서 쓸 때 함께 합니다(계획 문서 10절 위험).
 - [ ] 1단계 화면 틀과 필수 메뉴
 - [ ] 2단계 선택과 쪽 관리
 - [ ] 3단계 자료 위 판서
@@ -102,7 +106,9 @@ ClassBoard/
 - 단계가 끝나면 계획 문서의 완료 기준을 하나씩 확인한 결과를 표로 보고합니다.
 - 배포 주소와 Firebase 프로젝트 이름이 정해지면 이 절에 적습니다.
 - 저장소: https://github.com/800yearoldteacher/ClassBoard (공개, 기본 가지 `main`)
-- 배포 주소: https://800yearoldteacher.github.io/ClassBoard/ (0-B까지는 `main` 가지 그대로 배포하고, 1단계에서 GitHub Actions 배포로 바꿉니다)
+- 배포 주소: https://800yearoldteacher.github.io/ClassBoard/ (GitHub Actions `.github/workflows/deploy.yml`이 `main`에 올릴 때마다 빌드해서 배포합니다. `prototypes/`도 함께 올라갑니다)
+- 내 PC에서 미리 보기: `npm run dev` 후 `http://localhost:5173/ClassBoard/`. 배포 파일 만들기: `npm run build`(결과는 `dist/`)
+- 앱 아이콘은 `scripts/make-icons.ps1`로 다시 만듭니다. Windows PowerShell 5.1이 한글을 바르게 읽도록 이 파일은 BOM 있는 UTF-8로 저장합니다.
 - 0-A 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-18-pen-test.html
 - 0-B 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-19-link-test.html
 - 커밋 작성자 이메일은 이 저장소에서만 GitHub 비공개용 주소(noreply)로 설정해 두었습니다.

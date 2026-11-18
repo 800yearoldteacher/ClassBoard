@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#14181c">
+  <meta name="description" content="갤럭시탭 S펜 판서를 교실 PC에 실시간으로 보여 주는 전자칠판형 웹앱">
+  <link rel="icon" type="image/png" href="%BASE_URL%icons/icon-192.png">
+  <title>ClassBoard</title>
+</head>
+<body>
+  <div id="app">
+    <header id="topband" class="band">
+      <nav id="tools" class="toolrow" aria-label="판서 메뉴"></nav>
+    </header>
+
+    <main id="board" aria-label="칠판"></main>
+
+    <footer id="bottomband" class="band">
+      <nav id="pagebar" class="toolrow" aria-label="쪽 막대"></nav>
+    </footer>
+
+    <button id="handle-left" class="handle left" type="button" aria-label="보조 메뉴 열기" title="보조 메뉴"></button>
+    <button id="handle-right" class="handle right" type="button" aria-label="보조 메뉴 열기" title="보조 메뉴"></button>
+
+    <div id="backdrop" hidden></div>
+    <aside id="drawer" aria-label="보조 메뉴" aria-hidden="true"></aside>
+
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
