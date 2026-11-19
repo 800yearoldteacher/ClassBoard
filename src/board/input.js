@@ -7,15 +7,16 @@
    모드
    - draw : 펜 선
    - erase: 빨간 점선 고리. 펜을 떼면 main.js가 고리 안의 선을 지웁니다.
-   - laser: 레이저 잔상(진행 중 층에는 그리지 않습니다) */
+   - laser: 레이저 잔상(진행 중 층에는 그리지 않습니다)
+   - select: 선택 상자 안을 누르면 옮기기(move), 밖을 누르면 파란 점선 고리로 묶기(pick) */
 
 import { previewWidth, previewColor } from './ink.js';
 import { BACKGROUNDS } from './canvas.js';
 
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
-const LASSO_COLOR = '#ff6b6b';
+const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
-export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw }) {
+export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw, select }) {
   let penSeen = false;
   let active = null;
   let rect = null;
@@ -50,9 +51,10 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     let lw;
-    if (a.mode === 'erase') {
+    const lasso = a.mode === 'erase' || a.mode === 'pick';
+    if (lasso) {
       lw = 2.5;
-      ctx.strokeStyle = LASSO_COLOR;
+      ctx.strokeStyle = LASSO_COLOR[a.mode];
       ctx.lineWidth = lw;
       ctx.setLineDash([8, 7]);
       ctx.lineDashOffset = -a.len;   // 조각이 이어져도 점선 간격이 끊기지 않게 합니다
@@ -66,7 +68,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     ctx.moveTo(prev[0] * W, prev[1] * H);
     ctx.lineTo(q[0] * W, q[1] * H);
     ctx.stroke();
-    if (a.mode === 'erase') {
+    if (lasso) {
       ctx.setLineDash([]);
       a.len += Math.hypot((q[0] - prev[0]) * W, (q[1] - prev[1]) * H);
     }
@@ -78,12 +80,14 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     if (ev.pointerType === 'pen' && ev.pressure === 0) { active.zeros.push(toPt(ev)); return; }
     const q = toPt(ev);
     if (active.mode === 'laser') { laser.add(q); active.pts.push(q); return; }
+    if (active.mode === 'move') { active.last = q; return; }
     drawTo(q);
   }
 
   function cancel() {
     if (!active) return;
     if (active.mode === 'laser') laser.end();
+    else if (active.mode === 'move') select.end(true);
     else board.restoreRegion(active.box);
     active = null;
   }
@@ -110,6 +114,16 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
       const q = toPt(e);
       active.pts.push(q);
       laser.begin(q);
+    } else if (mode === 'select') {
+      const q = toPt(e);
+      if (select.down(q) === 'move') {
+        active.mode = 'move';
+        active.start = q;
+        active.last = q;
+      } else {
+        active.mode = 'pick';
+        drawTo(q);
+      }
     } else {
       addPoint(e);
     }
@@ -124,7 +138,13 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     if (typeof e.getCoalescedEvents === 'function') {
       try { list = e.getCoalescedEvents(); } catch (_) { list = []; }
     }
-    for (const ev of (list.length ? list : [e])) addPoint(ev);
+    if (active.mode === 'move') {
+      // 옮길 때는 마지막 위치만 쓰면 됩니다
+      addPoint(e);
+      select.move(active.last[0] - active.start[0], active.last[1] - active.start[1]);
+    } else {
+      for (const ev of (list.length ? list : [e])) addPoint(ev);
+    }
     const dt = performance.now() - t0;
     stats.count += 1; stats.total += dt; if (dt > stats.max) stats.max = dt;
   });
@@ -141,6 +161,8 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     }
     if (a.mode === 'laser') { laser.end(); return; }
     if (a.mode === 'erase') { onErase(a.pts, a.box); return; }
+    if (a.mode === 'move') { select.end(false); return; }
+    if (a.mode === 'pick') { select.pick(a.pts, a.box); return; }
     // 필압을 0으로만 보내는 펜이면 버린 점을 되살려 선이 사라지지 않게 합니다
     if (a.type === 'pen' && a.pts.length <= 2 && a.zeros.length > 3) a.pts = a.pts.concat(a.zeros.map((q) => [q[0], q[1], 0.5]));
     if (!a.pts.length) { board.restoreRegion(a.box); return; }

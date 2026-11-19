@@ -68,6 +68,35 @@ button { font: inherit; color: inherit; }
 }
 #board.erasing::after { border-color: var(--danger); }
 
+/* 선택 상자, 옮기는 동안 얹는 그림, 지우기 버튼 */
+#board .sel-box {
+  position: absolute;
+  border: 2px dashed #5aa9ff;
+  border-radius: 4px;
+  background: rgba(90, 169, 255, .06);
+  pointer-events: none;
+  z-index: 1;
+}
+#board .sel-overlay {
+  inset: auto;
+  pointer-events: none;
+  z-index: 1;
+}
+#board .sel-delete {
+  position: absolute;
+  z-index: 2;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #a33a41;
+  border-radius: 10px;
+  background: #7a2a2f;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
 /* ---------- 위·아래 띠 ---------- */
 .band {
   position: fixed;

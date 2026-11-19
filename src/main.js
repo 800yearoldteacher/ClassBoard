@@ -6,6 +6,7 @@ import { COLORS, SIZES, paintStroke, redrawInk, toRecord, strokeBounds, union } 
 import { attachInput } from './board/input.js';
 import { strokesInLasso } from './board/lasso.js';
 import { Laser } from './board/laser.js';
+import { Selection } from './board/select.js';
 import { History } from './history.js';
 import * as store from './store.js';
 import { icon } from './ui/icons.js';
@@ -24,18 +25,24 @@ const state = {
   page: null,
   strokes: [],   // 지금 쪽의 선(그린 순서대로)
   seq: 0,
+  hidden: null,  // 옮기는 동안 판서층에서 잠시 빼 둘 선 id
 };
 
 /* ---------- 칠판 ---------- */
 const boardEl = document.getElementById('board');
 const board = new BoardCanvas(boardEl);
-board.onRedrawInk = (ctx, w, h) => redrawInk(ctx, state.strokes, w, h);
+board.onRedrawInk = (ctx, w, h) => redrawInk(
+  ctx,
+  state.hidden ? state.strokes.filter((s) => !state.hidden.has(s.id)) : state.strokes,
+  w, h,
+);
 const laser = new Laser(boardEl);
 const history = new History();
+const selection = new Selection(boardEl, board, { onDelete: deleteSelected });
 
 /* ---------- 도구 ----------
-   current: 지금 도구('pen' | 'eraser' | 'laser')
-   last:    펜/지우개 버튼이 마지막으로 가리킨 도구. 레이저에서 돌아갈 때 씁니다. */
+   current: 지금 도구('pen' | 'eraser' | 'laser' | 'select')
+   last:    펜/지우개 버튼이 마지막으로 가리킨 도구. 레이저·선택에서 돌아갈 때 씁니다. */
 const tool = { current: 'pen', last: 'pen' };
 
 /* 설정(태블릿 안 meta 저장소에 보관) */
@@ -51,20 +58,27 @@ function setTool(t) {
   if (t === 'pen' || t === 'eraser') tool.last = t;
   const penBtn = document.getElementById('tool-pen');
   penBtn.innerHTML = icon(tool.last === 'eraser' ? 'eraser' : 'pen');
-  penBtn.setAttribute('aria-pressed', String(t !== 'laser'));
+  penBtn.setAttribute('aria-pressed', String(t === 'pen' || t === 'eraser'));
   penBtn.title = `펜/지우개: 지금 ${tool.last === 'eraser' ? '지우개' : '펜'}`;
   penBtn.classList.toggle('erasing', t === 'eraser');
   document.getElementById('tool-laser').setAttribute('aria-pressed', String(t === 'laser'));
+  document.getElementById('tool-select').setAttribute('aria-pressed', String(t === 'select'));
   boardEl.classList.toggle('erasing', t === 'eraser');
+  if (t !== 'select') selection.clear();
 }
 
 function togglePen() {
-  if (tool.current === 'laser') setTool(tool.last);   // 레이저에서 누르면 직전 도구로 돌아갑니다
+  // 레이저·선택에서 누르면 직전 도구(펜 또는 지우개)로 돌아갑니다
+  if (tool.current === 'laser' || tool.current === 'select') setTool(tool.last);
   else setTool(tool.current === 'pen' ? 'eraser' : 'pen');
 }
 function toggleLaser() {
   if (tool.current === 'laser') setTool(tool.last);
   else setTool('laser');
+}
+function toggleSelect() {
+  if (tool.current === 'select') setTool(tool.last);
+  else setTool('select');
 }
 
 /* ---------- 메뉴 ---------- */
@@ -150,20 +164,79 @@ function updateHistoryButtons() {
   }
 }
 
+/* 선을 (dx, dy)만큼 옮깁니다(칠판 기준 비율). 옮기기와 그 되돌리기에 씁니다. */
+const r5 = (n) => Math.round(n * 1e5) / 1e5;
+function moveStrokes(list, dx, dy) {
+  for (const s of list) {
+    s.pts = s.pts.map((p) => [r5(p[0] + dx), r5(p[1] + dy), p[2]]);
+    s._path = null; s._key = null; s._bb = null;   // 모양·범위를 다시 계산하게 합니다
+  }
+  board.redrawAll();
+  store.putStrokes(list.map(toRecord)).catch(saveError);
+}
+
 function undo() {
-  if (!state.page) return;
+  if (!state.page || input.drawing) return;
   const a = history.undo(state.page.id);
   if (!a) return;
-  if (a.type === 'add') removeStrokes(a.strokes); else if (a.type === 'erase') addStrokes(a.strokes);
+  selection.clear();
+  if (a.type === 'add') removeStrokes(a.strokes);
+  else if (a.type === 'erase') addStrokes(a.strokes);
+  else if (a.type === 'move') moveStrokes(a.strokes, -a.dx, -a.dy);
   updateHistoryButtons();
 }
 function redo() {
-  if (!state.page) return;
+  if (!state.page || input.drawing) return;
   const a = history.redo(state.page.id);
   if (!a) return;
-  if (a.type === 'add') addStrokes(a.strokes); else if (a.type === 'erase') removeStrokes(a.strokes);
+  selection.clear();
+  if (a.type === 'add') addStrokes(a.strokes);
+  else if (a.type === 'erase') removeStrokes(a.strokes);
+  else if (a.type === 'move') moveStrokes(a.strokes, a.dx, a.dy);
   updateHistoryButtons();
 }
+
+/* ---------- 선택 ---------- */
+function deleteSelected(list) {
+  if (!list.length || !state.page) return;
+  history.push(state.page.id, { type: 'erase', strokes: list });
+  selection.clear();
+  removeStrokes(list);
+  updateHistoryButtons();
+}
+
+const selectHooks = {
+  /* 상자 안을 누르면 옮기기, 밖이면 새로 묶기 */
+  down(q) {
+    if (selection.active && selection.contains(q)) {
+      state.hidden = new Set(selection.strokes.map((s) => s.id));
+      board.redrawAll();          // 묶인 선을 판서층에서 잠시 뺍니다
+      selection.beginMove();
+      return 'move';
+    }
+    selection.clear();
+    return 'pick';
+  },
+  move(dx, dy) { selection.moveTo(dx, dy); },
+  end(cancelled) {
+    const { dx, dy } = selection.endMove();
+    const list = selection.strokes.slice();
+    state.hidden = null;
+    if (!cancelled && (Math.abs(dx) > 1e-5 || Math.abs(dy) > 1e-5)) {
+      moveStrokes(list, dx, dy);
+      history.push(state.page.id, { type: 'move', strokes: list, dx, dy });
+      updateHistoryButtons();
+    } else {
+      board.redrawAll();
+    }
+    selection.set(list);   // 옮긴 자리에서 계속 선택해 둡니다
+  },
+  pick(poly, box) {
+    board.restoreRegion(box);   // 파란 고리 자국을 지웁니다
+    const hit = state.page ? strokesInLasso(state.strokes, poly) : [];
+    if (hit.length) selection.set(hit);
+  },
+};
 
 /* 고리 지우개: 고리 안의 선을 한꺼번에 지웁니다. */
 function eraseLasso(poly, box) {
@@ -195,6 +268,7 @@ async function showPage(pageId) {
   if (!page) throw new Error('쪽을 찾지 못했습니다.');
   const strokes = await store.getStrokes(page.id);
   laser.clear();
+  selection.clear();
   state.page = page;
   state.strokes = strokes;
   state.seq = strokes.reduce((m, s) => Math.max(m, s.seq), 0);
@@ -291,6 +365,7 @@ async function clearPage() {
   });
   if (!ok) return;
   const all = state.strokes.slice();
+  selection.clear();
   history.push(state.page.id, { type: 'erase', strokes: all });
   removeStrokes(all);
   updateHistoryButtons();
@@ -352,6 +427,7 @@ buildToolbar(document.getElementById('tools'), {
   'tool-laser': toggleLaser,
   'tool-width': pickWidth,
   'tool-color': pickColor,
+  'tool-select': toggleSelect,
   'tool-undo': undo,
   'tool-redo': redo,
 });
@@ -405,9 +481,10 @@ const input = attachInput({
   host: boardEl,
   board,
   laser,
-  getMode: () => (tool.current === 'eraser' ? 'erase' : tool.current === 'laser' ? 'laser' : 'draw'),
+  getMode: () => ({ eraser: 'erase', laser: 'laser', select: 'select' }[tool.current] || 'draw'),
   getStyle: styleFor,
   onErase: eraseLasso,
+  select: selectHooks,
   onDown: closePopover,
   canFingerDraw: () => settings.fingerDraw,
   onCommit(st, box) {
