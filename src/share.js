@@ -8,7 +8,7 @@
    수업 방에는 태블릿이 본 쪽의 배경과 선만 올리고, 원본 파일은 올리지 않습니다.
    Firebase 부품은 공유를 켤 때만 불러옵니다(평소 앱이 열리는 속도와 오프라인 사용에 영향 없음). */
 
-import { firebaseConfig, ROOM_RE, strokeToRoom } from './room.js';
+import { firebaseConfig, ROOM_RE, strokeToRoom, encodePts } from './room.js';
 import { roomPicture } from './media.js';
 
 let fb = null;            // 불러온 Firebase 함수와 db
@@ -90,6 +90,7 @@ export async function enable(savedCode) {
 
 /* 공유 끄기: PC 화면에 '공유가 꺼져 있습니다'를 보이게 합니다. 자료는 수업 종료 때 지웁니다. */
 export function disable() {
+  relayEnd();
   if (fb && room) fb.update(R('state'), { sharing: false, at: fb.serverTimestamp() }).catch(() => {});
   enabled = false;
   emit();
@@ -143,6 +144,65 @@ export function removeStrokes(pageId, ids) {
   const patch = {};
   for (const id of ids) patch[id] = null;
   write(fb.update(R(`pages/${pageId}/strokes`), patch));
+}
+
+/* 확대·이동 상태를 올립니다(손을 뗐을 때, 휠, '원래 크기'). */
+export function setView(view) {
+  if (!enabled) return;
+  write(fb.update(R('state'), { view: { z: view.z, x: view.x, y: view.y } }));
+}
+
+/* ---------- 긋고 있는 선·레이저를 실시간으로 ----------
+   펜이 닿으면 live/{id}(선) 또는 laser/{id}(레이저)를 만들고, 0.05초마다 그동안의 점을 묶어 c/{번호}로 보냅니다.
+   선은 펜을 떼면 완성된 선(pages/…/strokes)을 먼저 올린 뒤 live에서 지웁니다(올린 순서대로 PC에 도착합니다).
+   레이저는 펜을 떼면 done 표시를 하고, 잔상이 사라질 즈음(1.7초 뒤) 지웁니다. */
+const FLUSH_MS = 50;
+const relay = { id: null, kind: null, buf: [], n: 0, timer: 0 };
+
+function relayPath() { return `${relay.kind === 'laser' ? 'laser' : 'live'}/${relay.id}`; }
+
+function relayFlush() {
+  if (!relay.id || !relay.buf.length || !enabled) return;
+  const n = relay.n++;
+  const chunk = encodePts(relay.buf);
+  relay.buf = [];
+  write(fb.set(R(`${relayPath()}/c/${n}`), chunk));
+}
+
+export function relayBegin(kind, st = null) {
+  relayEnd();
+  if (!enabled) return;
+  relay.id = crypto.randomUUID().replace(/-/g, '');
+  relay.kind = kind;
+  relay.buf = [];
+  relay.n = 0;
+  const head = kind === 'laser'
+    ? { at: fb.serverTimestamp() }
+    : { color: st.color, w: st.w, tool: st.tool, sim: !!st.sim, at: fb.serverTimestamp() };
+  write(fb.set(R(relayPath()), head));
+  relay.timer = setInterval(relayFlush, FLUSH_MS);
+}
+
+export function relayPoint(q) {
+  if (relay.id) relay.buf.push(q);
+}
+
+export function relayEnd() {
+  if (!relay.id) return;
+  clearInterval(relay.timer);
+  relayFlush();
+  const path = relayPath();
+  if (enabled) {
+    if (relay.kind === 'laser') {
+      write(fb.update(R(path), { done: true }));
+      setTimeout(() => { if (fb && room) fb.remove(R(path)).catch(() => {}); }, 1700);
+    } else {
+      write(fb.remove(R(path)));
+    }
+  }
+  relay.id = null;
+  relay.kind = null;
+  relay.buf = [];
 }
 
 /* 쪽을 지웠을 때 수업 방에서도 지웁니다. */

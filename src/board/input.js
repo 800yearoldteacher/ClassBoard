@@ -16,7 +16,10 @@ import { baseColor } from './backgrounds.js';
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
-export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, select, usePressure = () => true }) {
+const NO_RELAY = { begin() {}, point() {}, end() {} };
+
+/* relay: 긋고 있는 선·레이저를 교실 PC로 실시간 보내는 곳(share.js). 공유를 끄면 아무것도 하지 않습니다. */
+export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, select, usePressure = () => true, relay = NO_RELAY }) {
   let active = null;
   let rect = null;
 
@@ -86,9 +89,10 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
   function addPoint(ev) {
     if (ev.pointerType === 'pen' && ev.pressure === 0) { active.zeros.push(toPt(ev)); return; }
     const q = toPt(ev);
-    if (active.mode === 'laser') { laser.add(q); active.pts.push(q); return; }
+    if (active.mode === 'laser') { laser.add(q); active.pts.push(q); relay.point(q); return; }
     if (active.mode === 'move') { active.last = q; return; }
     drawTo(q);
+    if (active.mode === 'draw') relay.point(q);   // 교실 PC로 실시간 전달(공유 중일 때)
   }
 
   function cancel() {
@@ -96,6 +100,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     if (active.mode === 'laser') laser.end();
     else if (active.mode === 'move') select.end(true);
     else board.restoreRegion(active.box);
+    relay.end();
     active = null;
   }
 
@@ -117,6 +122,8 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
       const q = toPt(e);
       active.pts.push(q);
       laser.begin(q);
+      relay.begin('laser');
+      relay.point(q);
     } else if (mode === 'select') {
       const q = toPt(e);
       if (select.down(q) === 'move') {
@@ -128,6 +135,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
         drawTo(q);
       }
     } else {
+      if (mode === 'draw') relay.begin('draw', st);
       addPoint(e);
     }
     try { host.setPointerCapture(e.pointerId); } catch (_) { /* 가짜 입력으로 시험할 때 */ }
@@ -162,16 +170,17 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
       stats.lastMax = stats.max;
       stats.lastEvents = stats.count;
     }
-    if (a.mode === 'laser') { laser.end(); return; }
+    if (a.mode === 'laser') { laser.end(); relay.end(); return; }
     if (a.mode === 'erase') { onErase(a.pts, a.box); return; }
     if (a.mode === 'move') { select.end(false); return; }
     if (a.mode === 'pick') { select.pick(a.pts, a.box); return; }
     // 필압을 0으로만 보내는 펜이면 버린 점을 되살려 선이 사라지지 않게 합니다
     if (a.type === 'pen' && a.pts.length <= 2 && a.zeros.length > 3) a.pts = a.pts.concat(a.zeros.map((q) => [q[0], q[1], 0.5]));
-    if (!a.pts.length) { board.restoreRegion(a.box); return; }
+    if (!a.pts.length) { board.restoreRegion(a.box); relay.end(); return; }
     // 한 번 톡 찍은 점도 보이도록 아주 짧은 선으로 만듭니다
     const pts = a.pts.length === 1 ? [a.pts[0], [a.pts[0][0] + 0.0004, a.pts[0][1] + 0.0004, a.pts[0][2]]] : a.pts;
     onCommit({ ...a.st, pts }, a.box);
+    relay.end();   // 완성된 선을 올린 뒤에 실시간 선을 지웁니다
   }
   host.addEventListener('pointerup', (e) => finish(e, false));
   host.addEventListener('pointercancel', (e) => finish(e, true));

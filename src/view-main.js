@@ -7,9 +7,11 @@
 import './view.css';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, onChildAdded, onChildChanged, onChildRemoved } from 'firebase/database';
-import { firebaseConfig, ROOM_RE, strokeFromRoom } from './room.js';
+import { firebaseConfig, ROOM_RE, strokeFromRoom, decodePts } from './room.js';
 import { BoardCanvas } from './board/canvas.js';
-import { redrawInk } from './board/ink.js';
+import { redrawInk, previewWidth, previewColor } from './board/ink.js';
+import { baseColor } from './board/backgrounds.js';
+import { Laser } from './board/laser.js';
 
 const code = decodeURIComponent(location.hash.slice(1)).trim().toLowerCase();
 const boardEl = document.getElementById('board');
@@ -25,6 +27,43 @@ function notice(html) {
 const board = new BoardCanvas(boardEl);
 const strokes = new Map();   // 지금 쪽의 선
 board.onRedrawInk = (ctx, w, h) => redrawInk(ctx, [...strokes.values()].sort((a, b) => a.seq - b.seq), w, h);
+
+const laser = new Laser(boardEl, () => board.view);
+
+/* ---------- 태블릿이 긋고 있는 선 ----------
+   태블릿이 0.05초마다 보내는 점 묶음을 받아 진행 중 층에 짧은 조각으로 덧그립니다(태블릿 미리보기와 같은 방식).
+   진행 중 층을 다시 채울 때(compose)마다 아직 긋고 있는 선을 다시 얹습니다. */
+const liveLines = new Map();   // id → { st, color, pts }
+
+function drawLiveSegs(L, pts) {
+  const ctx = board.liveCtx;
+  if (!ctx) return;
+  const z = board.view.z;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.setLineDash([]);
+  ctx.strokeStyle = L.color;
+  for (const q of pts) {
+    const prev = L.pts.length ? L.pts[L.pts.length - 1] : q;
+    const [x0, y0] = board.toScreen(prev[0], prev[1]);
+    const [x1, y1] = board.toScreen(q[0], q[1]);
+    ctx.lineWidth = previewWidth(L.st, (prev[2] + q[2]) / 2, board.w) * z;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    L.pts.push(q);
+  }
+}
+function redrawLiveLines() {
+  for (const L of liveLines.values()) {
+    const pts = L.pts;
+    L.pts = [];
+    drawLiveSegs(L, pts);
+  }
+}
+const compose = board.compose.bind(board);
+board.compose = () => { compose(); redrawLiveLines(); };
 
 let redrawPending = 0;
 function redrawSoon() {
@@ -42,6 +81,7 @@ function layout() {
   s.setProperty('--bw', `${bw}px`);
   s.setProperty('--bh', `${bh}px`);
   board.resize(bw, bh, window.devicePixelRatio || 1);
+  laser.resize(bw, bh, window.devicePixelRatio || 1);
 }
 window.addEventListener('resize', layout);
 layout();
@@ -114,6 +154,39 @@ if (!ROOM_RE.test(code)) {
     offPage.push(onChildChanged(sref, (s) => { strokes.set(s.key, strokeFromRoom(s.key, s.val())); redrawSoon(); }));
     offPage.push(onChildRemoved(sref, (s) => { strokes.delete(s.key); redrawSoon(); }));
   }
+
+  /* 긋고 있는 선: live/{id} = { color, w, tool, sim, c: { 번호: 점 묶음 } } */
+  onChildAdded(ref(db, `${base}/live`), (s) => {
+    const v = s.val() || {};
+    const st = { color: v.color || '#fff', w: v.w || 0.004, tool: v.tool || 'pen', sim: !!v.sim };
+    const L = { st, color: previewColor(st, baseColor(board.background)), pts: [], off: null };
+    liveLines.set(s.key, L);
+    L.off = onChildAdded(ref(db, `${base}/live/${s.key}/c`), (cs) => drawLiveSegs(L, decodePts(cs.val())));
+  });
+  onChildRemoved(ref(db, `${base}/live`), (s) => {
+    const L = liveLines.get(s.key);
+    if (L) { L.off(); liveLines.delete(s.key); }
+    redrawSoon();   // 완성된 선이 먼저 도착해 있으므로 다시 그리면 자국 없이 바뀝니다
+  });
+
+  /* 레이저: laser/{id} = { c: { 번호: 점 묶음 }, done } */
+  const lasers = new Map();
+  onChildAdded(ref(db, `${base}/laser`), (s) => {
+    const offs = [];
+    let first = true;
+    offs.push(onChildAdded(ref(db, `${base}/laser/${s.key}/c`), (cs) => {
+      for (const q of decodePts(cs.val())) {
+        if (first) { laser.begin(q); first = false; } else laser.add(q);
+      }
+    }));
+    offs.push(onValue(ref(db, `${base}/laser/${s.key}/done`), (d) => { if (d.val()) laser.end(); }));
+    lasers.set(s.key, offs);
+  });
+  onChildRemoved(ref(db, `${base}/laser`), (s) => {
+    for (const off of lasers.get(s.key) || []) off();
+    lasers.delete(s.key);
+    laser.end();
+  });
 
   onValue(ref(db, `${base}/state`), (snap) => {
     const st = snap.val();

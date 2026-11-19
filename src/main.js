@@ -882,6 +882,7 @@ const input = attachInput({
   onErase: eraseLasso,
   select: selectHooks,
   usePressure: () => prefs.pressure !== false,
+  relay: { begin: share.relayBegin, point: share.relayPoint, end: share.relayEnd },
   onDown: closePopover,
   onCommit(st, box) {
     if (!state.page) { board.restoreRegion(box); return; }   // 아직 불러오는 중
@@ -925,6 +926,7 @@ function updateZoomButton() {
 function afterViewChange() {
   selection.place();
   updateZoomButton();
+  share.setView(board.view);   // 교실 PC도 같은 확대·이동 상태로
 }
 
 const viewCtl = attachView({
