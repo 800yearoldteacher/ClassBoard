@@ -433,6 +433,22 @@ button { font: inherit; color: inherit; }
   opacity: .92;
 }
 
+/* ---------- 배경 고르기 ---------- */
+.bg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.bg-item {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 8px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: #222930;
+  cursor: pointer;
+}
+.bg-item canvas { width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; }
+.bg-item.sel { border-color: var(--accent); }
+.modal:has(.bg-grid) { width: min(560px, 100%); }
+
 /* ---------- 서랍 안 추가 모양 ---------- */
 .menu-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .menu-item .state { color: var(--muted); font-size: 14px; }

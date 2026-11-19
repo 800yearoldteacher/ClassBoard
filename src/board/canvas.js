@@ -7,10 +7,7 @@
    투명한 저지연 캔버스는 갤럭시탭 S11 울트라의 크롬·웨일에서 투명한 곳이 검게 나와 칠판을 가렸습니다(0-B 시험).
    그래서 배경층과 판서층은 화면 밖 캔버스로 두고, 진행 중 층에 복사한 뒤 그 위에 그리는 중인 것만 덧그립니다. */
 
-export const BACKGROUNDS = {
-  chalk: '#1d3b2f',
-  white: '#ffffff',
-};
+import { paintBackground as paintBg } from './backgrounds.js';
 
 export class BoardCanvas {
   constructor(host) {
@@ -25,7 +22,7 @@ export class BoardCanvas {
     this.w = 0;
     this.h = 0;
     this.dpr = 1;
-    this.background = 'chalk';
+    this.background = { type: 'chalk' };   // 지금 쪽의 배경(쪽 기록의 bg)
     this.onRedrawInk = () => {};   // 크기가 바뀌면 판서층을 다시 그리도록 main.js가 채웁니다
   }
 
@@ -84,8 +81,14 @@ export class BoardCanvas {
   }
 
   paintBackground() {
-    this.bgCtx.fillStyle = BACKGROUNDS[this.background] || BACKGROUNDS.chalk;
-    this.bgCtx.fillRect(0, 0, this.w, this.h);
+    if (!this.w) return;
+    paintBg(this.bgCtx, this.background, this.w, this.h);
+  }
+
+  /* 쪽을 넘기거나 배경을 바꿀 때 씁니다. 화면 반영은 redrawAll()이나 compose()로 합니다. */
+  setBackground(bg) {
+    this.background = bg || { type: 'chalk' };
+    this.paintBackground();
   }
 
   /* 배경층과 판서층을 진행 중 층에 복사합니다. 그리는 중인 것은 이 뒤에 덧그립니다. */

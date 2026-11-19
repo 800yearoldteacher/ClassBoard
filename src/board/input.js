@@ -11,7 +11,7 @@
    - select: 선택 상자 안을 누르면 옮기기(move), 밖을 누르면 파란 점선 고리로 묶기(pick) */
 
 import { previewWidth, previewColor } from './ink.js';
-import { BACKGROUNDS } from './canvas.js';
+import { baseColor } from './backgrounds.js';
 
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
@@ -106,7 +106,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     const st = getStyle(e.pointerType);
     active = {
       pid: e.pointerId, type: e.pointerType, mode, st,
-      color: previewColor(st, BACKGROUNDS[board.background] || BACKGROUNDS.chalk),
+      color: previewColor(st, baseColor(board.background)),
       pts: [], zeros: [], box: null, len: 0,
     };
     stats.count = 0; stats.total = 0; stats.max = 0;

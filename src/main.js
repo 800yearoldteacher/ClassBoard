@@ -18,7 +18,7 @@ import { toast } from './ui/toast.js';
 import { openModal, confirmModal, textModal, pinModal, listModal } from './ui/modal.js';
 import { hashPin } from './lock.js';
 import { openPageManager } from './ui/pages.js';
-import { BACKGROUNDS } from './board/canvas.js';
+import { BG_TYPES, paintBackground, isDark, bgName } from './board/backgrounds.js';
 
 /* ---------- 상태 ---------- */
 const prefs = loadPrefs();
@@ -288,7 +288,9 @@ async function showPage(pageId) {
   state.page = page;
   state.strokes = strokes;
   state.seq = strokes.reduce((m, s) => Math.max(m, s.seq), 0);
+  board.setBackground(page.bg);
   board.redrawAll();
+  matchPenToBackground();
   updatePageBar();
   updateHistoryButtons();
   store.setMeta('currentPageId', page.id).catch(() => {});
@@ -319,6 +321,62 @@ function addPage() {
   });
 }
 
+/* ---------- 배경 ---------- */
+/* 기본 색 규칙: 칠판 배경이면 흰색, 밝은 배경이면 검정(계획서 6-2절).
+   지금 펜 색이 흰색인데 밝은 배경이면 검정으로, 검정인데 칠판이면 흰색으로 바꿉니다. 다른 색은 그대로 둡니다. */
+const WHITE_IDX = 0, BLACK_IDX = 1;
+function matchPenToBackground() {
+  const dark = isDark(state.page && state.page.bg);
+  const want = dark ? WHITE_IDX : BLACK_IDX;
+  const other = dark ? BLACK_IDX : WHITE_IDX;
+  if (prefs.colorIdx === other) {
+    prefs.colorIdx = want;
+    savePrefs(prefs);
+    showColorOnButton();
+  }
+}
+
+async function pickBackground() {
+  if (!state.page) return;
+  const chosen = await new Promise((resolve) => {
+    openModal({
+      title: '배경 바꾸기',
+      message: '지금 쪽의 배경을 고릅니다. 새로 넣는 쪽은 지금 쪽의 배경을 따릅니다.',
+      onCancel: () => resolve(null),
+      build(body, close) {
+        const grid = document.createElement('div');
+        grid.className = 'bg-grid';
+        for (const b of BG_TYPES) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'bg-item' + (b.type === state.page.bg.type ? ' sel' : '');
+          const cv = document.createElement('canvas');
+          const dpr = Math.min(2, window.devicePixelRatio || 1);
+          cv.width = 160 * dpr; cv.height = 90 * dpr;
+          const ctx = cv.getContext('2d');
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          paintBackground(ctx, { type: b.type }, 160, 90);
+          const label = document.createElement('span');
+          label.textContent = b.name;
+          btn.append(cv, label);
+          btn.addEventListener('click', () => { close(); resolve(b.type); });
+          grid.append(btn);
+        }
+        body.append(grid);
+      },
+      actions: [{ label: '닫기', cancel: true }],
+    });
+  });
+  if (!chosen || chosen === state.page.bg.type) return;
+  state.page = { ...state.page, bg: { type: chosen } };
+  board.setBackground(state.page.bg);
+  board.compose();
+  matchPenToBackground();
+  drawer.close();
+  store.putPage(state.page).catch(saveError);
+  toast(`배경을 ${bgName(state.page.bg)}으로 바꿨습니다.`);   // 다섯 이름 모두 받침으로 끝나 '으로'를 씁니다
+}
+
 /* ---------- 쪽 관리 창 ---------- */
 const THUMB_W = 320, THUMB_H = 180;
 
@@ -334,8 +392,7 @@ async function drawThumb(pageId, canvas) {
   const strokes = isCurrent
     ? state.strokes.map((s) => ({ ...s, _path: null, _key: null }))
     : await store.getStrokes(pageId);
-  ctx.fillStyle = BACKGROUNDS[(page && page.bg && page.bg.type) || 'chalk'] || BACKGROUNDS.chalk;
-  ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+  paintBackground(ctx, page && page.bg, THUMB_W, THUMB_H);
   for (const s of strokes) if (s.tool === 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
   for (const s of strokes) if (s.tool !== 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
 }
@@ -525,7 +582,7 @@ const drawer = buildDrawer({
       { label: 'PDF 열기', later: 's3' },
       { label: '이미지 불러오기', later: 's3' },
       { label: '카메라 촬영', later: 's3' },
-      { label: '배경 바꾸기', later: 's2' },
+      { label: '배경 바꾸기', onClick: pickBackground },
     ] },
     { title: '공유', items: [
       { label: 'PC 공유 켜기', later: 's4' },

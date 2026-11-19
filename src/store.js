@@ -66,6 +66,7 @@ export function setMeta(key, value) { return put('meta', { key, value }); }
 export function getLesson(id) { return get('lessons', id); }
 export function putLesson(lesson) { return put('lessons', lesson); }
 export function getPage(id) { return get('pages', id); }
+export function putPage(page) { return put('pages', page); }
 
 export async function listLessons() {
   const db = await open();
