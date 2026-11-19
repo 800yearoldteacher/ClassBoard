@@ -7,6 +7,7 @@ import { laterToast } from './toast.js';
 
 const TOOLS = [
   { id: 'tool-pen', label: '펜/지우개', icon: 'pen', later: 'next', pressed: true },
+  { id: 'tool-clear', label: '이 쪽 모두 지우기', text: 'ALL', hidden: true },   // 지우개일 때만 보입니다
   { id: 'tool-laser', label: '레이저', icon: 'laser', later: 'next' },
   { id: 'tool-width', label: '굵기', icon: 'width', later: 'next' },
   { id: 'tool-color', label: '색깔', html: '<span class="swatch" style="--c:#ffffff"></span>', later: 'next' },
@@ -40,6 +41,7 @@ function makeButtons(host, items, handlers = {}) {
     b.title = it.label;
     b.setAttribute('aria-label', it.label);
     if (it.pressed !== undefined) b.setAttribute('aria-pressed', String(!!it.pressed));
+    if (it.hidden) b.hidden = true;
     b.innerHTML = it.icon ? icon(it.icon) : it.html || `<span class="count">${it.text}</span>`;
     const handler = handlers[it.id];
     if (handler) b.addEventListener('click', () => handler(b));

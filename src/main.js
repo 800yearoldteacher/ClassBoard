@@ -64,6 +64,7 @@ function setTool(t) {
   document.getElementById('tool-laser').setAttribute('aria-pressed', String(t === 'laser'));
   document.getElementById('tool-select').setAttribute('aria-pressed', String(t === 'select'));
   boardEl.classList.toggle('erasing', t === 'eraser');
+  document.getElementById('tool-clear').hidden = t !== 'eraser';   // ALL 버튼은 지우개일 때만
   if (t !== 'select') selection.clear();
 }
 
@@ -194,6 +195,19 @@ function redo() {
   else if (a.type === 'erase') removeStrokes(a.strokes);
   else if (a.type === 'move') moveStrokes(a.strokes, a.dx, a.dy);
   updateHistoryButtons();
+}
+
+/* 지우개 옆 ALL 버튼: 이 쪽의 선을 모두 지웁니다. 되돌리기로 살릴 수 있어 따로 묻지 않습니다. */
+function eraseAll() {
+  if (!state.page || input.drawing) return;
+  if (!state.strokes.length) { toast('이 쪽에는 지울 판서가 없습니다.'); return; }
+  const all = state.strokes.slice();
+  selection.clear();
+  history.push(state.page.id, { type: 'erase', strokes: all });
+  removeStrokes(all);
+  updateHistoryButtons();
+  toast('이 쪽을 모두 지웠습니다. 되돌리기로 살릴 수 있습니다.');
+  if (settings.penAfterErase) setTool('pen');
 }
 
 /* ---------- 선택 ---------- */
@@ -424,6 +438,7 @@ function toggleSetting(key, onText, offText) {
 /* ---------- 메뉴 만들기 ---------- */
 buildToolbar(document.getElementById('tools'), {
   'tool-pen': togglePen,
+  'tool-clear': eraseAll,
   'tool-laser': toggleLaser,
   'tool-width': pickWidth,
   'tool-color': pickColor,

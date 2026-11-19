@@ -134,6 +134,8 @@ button { font: inherit; color: inherit; }
 .tool[aria-pressed="true"].erasing { background: #3a2326; border-color: #6b3b40; color: var(--danger); }
 #tool-laser[aria-pressed="true"] { background: #3a2326; border-color: #6b3b40; color: #ff5a50; }
 .tool[aria-disabled="true"] { opacity: .35; }
+#tool-clear { color: var(--danger); border-color: #6b3b40; }
+#tool-clear .count { font-weight: 700; font-size: 15px; letter-spacing: .5px; }
 .tool.wide { width: auto; min-width: calc(var(--btn) * 1.6); padding: 0 10px; }
 .tool.small { --btn: 40px; }
 .icon { width: 60%; height: 60%; max-width: 28px; max-height: 28px; }
