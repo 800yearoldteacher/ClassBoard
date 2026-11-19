@@ -284,7 +284,7 @@ async function showPage(pageId) {
   const page = await store.getPage(pageId);
   if (!page) throw new Error('쪽을 찾지 못했습니다.');
   const strokes = await store.getStrokes(page.id);
-  const picture = await media.bitmapFor(page.bg);
+  const picture = await media.bitmapFor(page.bg, boardPixels());
   laser.clear();
   selection.clear();
   state.page = page;
@@ -293,6 +293,7 @@ async function showPage(pageId) {
   board.setBackground(page.bg, picture);
   board.redrawAll();
   matchPenToBackground();
+  prefetchNeighbors();
   updatePageBar();
   updateHistoryButtons();
   store.setMeta('currentPageId', page.id).catch(() => {});
@@ -412,6 +413,105 @@ async function toggleFullscreen() {
 }
 document.addEventListener('fullscreenchange', showFullscreenButton);
 
+/* 칠판의 실제 화소 크기(PDF 쪽을 이 크기에 맞춰 그립니다) */
+function boardPixels() {
+  return { w: Math.round(board.w * board.dpr) || 1920, h: Math.round(board.h * board.dpr) || 1080 };
+}
+
+/* 앞뒤 쪽이 PDF면 미리 그려 둡니다. */
+async function prefetchNeighbors() {
+  const i = pageIndex();
+  for (const j of [i + 1, i - 1]) {
+    const id = state.lesson.pageIds[j];
+    if (!id) continue;
+    const p = await store.getPage(id);
+    if (p) media.prefetch(p.bg, boardPixels());
+  }
+}
+
+/* 화면 크기가 바뀌면 PDF 쪽을 새 크기로 다시 그립니다(그동안은 늘린 그림을 씁니다). */
+async function refreshPictureForSize() {
+  const page = state.page;
+  if (!page || page.bg.type !== 'pdf') return;
+  const pic = await media.bitmapFor(page.bg, boardPixels());
+  if (state.page !== page) return;
+  board.setBackground(page.bg, pic);
+  board.compose();
+}
+
+/* ---------- PDF ----------
+   PDF를 고르면 쪽 범위를 묻고, 고른 쪽들을 지금 쪽 뒤에 차례로 넣습니다. */
+function parseRange(text, max) {
+  const t = text.replace(/\s/g, '').replace(/[~∼〜–—]/g, '-');
+  if (!t) return Array.from({ length: max }, (_, i) => i + 1);
+  const out = [];
+  for (const part of t.split(/[,，]/)) {
+    if (!part) continue;
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!m) return null;
+    let a = Number(m[1]), b = Number(m[2] || m[1]);
+    if (a > b) [a, b] = [b, a];
+    if (a < 1 || b > max) return null;
+    for (let k = a; k <= b; k++) out.push(k);
+  }
+  return out.length ? out : null;
+}
+
+function describeRange(list) {
+  const parts = [];
+  for (let i = 0; i < list.length; i++) {
+    let j = i;
+    while (j + 1 < list.length && list[j + 1] === list[j] + 1) j++;
+    parts.push(i === j ? `${list[i]}` : `${list[i]}~${list[j]}`);
+    i = j;
+  }
+  return parts.join(', ');
+}
+
+async function openPdf() {
+  const [file] = await pickFiles({ accept: 'application/pdf,.pdf' });
+  if (!file) return;
+  drawer.close();
+  let info;
+  try {
+    toast('PDF를 여는 중입니다…', { duration: 0 });
+    info = await media.importPdf(file);
+    toast(`PDF를 열었습니다. 전체 ${info.pages}쪽입니다.`);
+  } catch (e) {
+    console.error(e);
+    toast('PDF를 열지 못했습니다. 파일이 손상되었거나 암호가 걸려 있을 수 있습니다.', { duration: 6000 });
+    return;
+  }
+  let list = null;
+  for (;;) {
+    const text = await textModal({
+      title: 'PDF 쪽 고르기',
+      message: `${info.name} · 전체 ${info.pages}쪽. 가져올 쪽을 적습니다. 예: 12-15, 20 (비우면 전체)`,
+      value: info.pages <= 30 ? `1-${info.pages}` : '',
+      ok: '가져오기',
+      allowEmpty: true,
+    });
+    if (text === null) { store.dropAssetIfUnused(info.assetId).catch(() => {}); return; }
+    list = parseRange(text, info.pages);
+    if (list) break;
+    toast(`쪽 번호를 1부터 ${info.pages} 사이로, '12-15, 20'처럼 적습니다.`, { duration: 5000 });
+  }
+  if (list.length > 100 && !(await confirmModal({
+    title: '많은 쪽 가져오기',
+    message: `${list.length}쪽을 가져옵니다. 쪽 관리 창이 길어질 수 있습니다. 계속합니까?`,
+    ok: '가져오기',
+  }))) { store.dropAssetIfUnused(info.assetId).catch(() => {}); return; }
+
+  await guarded(async () => {
+    const start = pageIndex() + 1;
+    const bgs = list.map((n) => ({ type: 'pdf', assetId: info.assetId, pdfPage: n }));
+    const { lesson, pages } = await store.insertPages(state.lesson, start, bgs);
+    state.lesson = lesson;
+    await showPage(pages[0].id);
+    toast(`PDF ${describeRange(list)}쪽(${list.length}쪽)을 ${start + 1}쪽부터 넣었습니다.`, { duration: 5000 });
+  });
+}
+
 /* ---------- 사진·카메라 ----------
    고른 사진마다 지금 쪽 뒤에 새 쪽을 하나씩 넣고, 사진을 배경으로 씁니다. */
 function pickFiles({ accept, multiple = false, capture = null }) {
@@ -469,7 +569,7 @@ async function drawThumb(pageId, canvas) {
   const strokes = isCurrent
     ? state.strokes.map((s) => ({ ...s, _path: null, _key: null }))
     : await store.getStrokes(pageId);
-  paintBackground(ctx, page && page.bg, THUMB_W, THUMB_H, await media.bitmapFor(page && page.bg));
+  paintBackground(ctx, page && page.bg, THUMB_W, THUMB_H, await media.bitmapFor(page && page.bg, { w: THUMB_W * dpr, h: THUMB_H * dpr }));
   for (const s of strokes) if (s.tool === 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
   for (const s of strokes) if (s.tool !== 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
 }
@@ -659,7 +759,7 @@ const drawer = buildDrawer({
   onClose: () => { unlocked = false; },
   sections: [
     { title: '자료', items: [
-      { label: 'PDF 열기', later: 's3' },
+      { label: 'PDF 열기', onClick: openPdf },
       { label: '이미지 불러오기', onClick: importPictures },
       { label: '카메라 촬영', onClick: takePhoto },
       { label: '배경 바꾸기', onClick: pickBackground },
@@ -747,6 +847,7 @@ function applyLayout() {
     s.setProperty('--btn', `${Math.max(36, Math.min(52, Math.min(layout.top, layout.bottom) - 10))}px`);
     board.resize(layout.bw, layout.bh, dpr);
     laser.resize(layout.bw, layout.bh, dpr);
+    refreshPictureForSize().catch(() => {});
   }
   lastLayout = layout;
   drawer.updateInfo(layout, board, input.stats);

@@ -107,7 +107,8 @@ ClassBoard/
   - [x] 2026-11-19 2-3 배경 바꾸기(칠판·흰 판·모눈·줄 공책·깍두기 공책, 판 0.7.1): 흰 판만 흰 바탕이고 무늬 배경은 초록 칠판 위 옅은 흰 선입니다. 배경은 쪽마다 저장하고 새 쪽은 지금 쪽 배경을 따릅니다. 흰색 펜으로 흰 판에 가면 검정으로, 검정 펜으로 초록 배경에 가면 흰색으로 바꿉니다. 무늬는 `board/backgrounds.js`(모눈 가로 40칸, 줄 공책 14줄, 깍두기 16×9칸과 점선 십자).
   - [x] 2026-11-19 2-4 전체화면 버튼(판 0.8.0): PC 크롬과 태블릿에서 확인했습니다. 설치한 전체화면 앱에서는 "이미 전체화면입니다"라고 안내합니다. Claude 데스크톱의 앱 안 미리보기 창은 전체화면을 허용하지 않으므로 전체화면 확인은 사용자 크롬에서 합니다.
 - [ ] 3단계 자료 위 판서: 세 묶음(3-1 이미지·카메라 · 3-2 PDF · 3-3 확대·이동)으로 나눠 묶음마다 배포하고 태블릿에서 확인합니다.
-  - [ ] 3-1 이미지·카메라: 만들어 배포했고(판 0.9.0), 태블릿 확인이 남았습니다. 사진은 긴 변 3000px 안쪽 JPEG로 줄여 IndexedDB `assets`에 저장하고(저장소 판 2), 칠판 안에 잘리지 않게 가운데에 두며 남는 곳은 칠판색입니다. 사진 쪽에서 펜 기본 색은 검정입니다. 카메라는 태블릿 기본 카메라 앱을 엽니다. 쪽을 지우거나 배경을 바꿔 아무 쪽도 쓰지 않는 사진은 지웁니다.
+  - [x] 2026-11-19 3-1 이미지·카메라(판 0.9.0): 태블릿에서 확인했습니다.
+  - [ ] 3-2 PDF 열기(쪽 범위 고르기, 미리 그려 두기): 만들어 배포했고(판 0.10.0), 태블릿 확인이 남았습니다. pdfjs-dist 6.5.438(Apache-2.0)은 PDF를 처음 열 때만 불러옵니다. PDF 파일은 한 번만 저장하고 쪽마다 `{ type: 'pdf', assetId, pdfPage }`를 기억합니다. 쪽은 칠판 실제 화소 크기로 그리고, 앞뒤 쪽을 미리 그리며, 최근 10장을 기억합니다. pdf.js 글자 자료(cmaps, standard_fonts)는 빌드 전에 `public/pdfjs/`로 복사해 함께 올립니다. 사진은 긴 변 3000px 안쪽 JPEG로 줄여 IndexedDB `assets`에 저장하고(저장소 판 2), 칠판 안에 잘리지 않게 가운데에 두며 남는 곳은 칠판색입니다. 사진 쪽에서 펜 기본 색은 검정입니다. 카메라는 태블릿 기본 카메라 앱을 엽니다. 쪽을 지우거나 배경을 바꿔 아무 쪽도 쓰지 않는 사진은 지웁니다.
 - [ ] 4단계 교실 PC 보기 화면
 - [ ] 5단계 교실 실사용(v1.0)
 
@@ -118,7 +119,8 @@ ClassBoard/
 - 배포 주소와 Firebase 프로젝트 이름이 정해지면 이 절에 적습니다.
 - 저장소: https://github.com/800yearoldteacher/ClassBoard (공개, 기본 가지 `main`)
 - 배포 주소: https://800yearoldteacher.github.io/ClassBoard/ (GitHub Actions `.github/workflows/deploy.yml`이 `main`에 올릴 때마다 빌드해서 배포합니다. `prototypes/`도 함께 올라갑니다)
-- 내 PC에서 미리 보기: `npm run dev` 후 `http://localhost:5173/ClassBoard/`. 배포 파일 만들기: `npm run build`(결과는 `dist/`)
+- 내 PC에서 미리 보기: `npm run dev` 후 `http://localhost:5173/ClassBoard/`. 배포 파일 만들기: `npm run build`(결과는 `dist/`). 두 명령 모두 먼저 `scripts/copy-pdfjs-assets.mjs`가 pdf.js 글자 자료를 `public/pdfjs/`로 복사합니다(저장소에는 올리지 않음).
+- Claude 데스크톱의 앱 안 미리보기 창이 가려져 있으면 화면 갱신(requestAnimationFrame)이 멈춰 레이저·PDF 그리기가 진행되지 않습니다. 화면 캡처를 하면 진행됩니다.
 - 앱 아이콘은 `scripts/make-icons.ps1`로 다시 만듭니다. Windows PowerShell 5.1이 한글을 바르게 읽도록 이 파일은 BOM 있는 UTF-8로 저장합니다.
 - 0-A 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-18-pen-test.html
 - 0-B 시험 페이지: https://800yearoldteacher.github.io/ClassBoard/prototypes/2026-11-19-link-test.html

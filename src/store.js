@@ -121,6 +121,20 @@ export async function deletePage(lesson, pageId) {
   return next;
 }
 
+/* 수업의 index 자리부터 여러 쪽을 차례로 넣습니다(PDF 쪽 가져오기). 넣은 쪽 목록을 함께 돌려줍니다. */
+export async function insertPages(lesson, index, bgs) {
+  const pages = bgs.map((bg) => ({ id: crypto.randomUUID(), lessonId: lesson.id, bg: { ...bg } }));
+  const pageIds = lesson.pageIds.slice();
+  pageIds.splice(index, 0, ...pages.map((p) => p.id));
+  const next = { ...lesson, pageIds, updatedAt: Date.now() };
+  const db = await open();
+  const tx = db.transaction(['lessons', 'pages'], 'readwrite');
+  for (const p of pages) tx.objectStore('pages').put(p);
+  tx.objectStore('lessons').put(next);
+  await done(tx);
+  return { lesson: next, pages };
+}
+
 /* 수업의 index 자리에 새 쪽을 넣습니다(쪽 순서와 쪽을 한 번에 저장). */
 export async function insertPage(lesson, index, bg) {
   const page = { id: crypto.randomUUID(), lessonId: lesson.id, bg: { ...bg } };

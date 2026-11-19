@@ -2,6 +2,8 @@
 node_modules/
 dist/
 dev-dist/
+# 빌드 전에 node_modules/pdfjs-dist에서 복사합니다(scripts/copy-pdfjs-assets.mjs)
+public/pdfjs/
 
 # 비밀 값과 개인 설정
 .env

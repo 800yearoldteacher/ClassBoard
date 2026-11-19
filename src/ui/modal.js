@@ -72,12 +72,12 @@ export function confirmModal({ title, message, ok = '확인', danger = false }) 
   });
 }
 
-export function textModal({ title, message = '', value = '', ok = '확인', maxLength = 40 }) {
+export function textModal({ title, message = '', value = '', ok = '확인', maxLength = 40, allowEmpty = false }) {
   return new Promise((resolve) => {
     let input = null;
     const submit = () => {
       const v = input.value.trim();
-      if (!v) { input.focus(); return false; }
+      if (!v && !allowEmpty) { input.focus(); return false; }
       resolve(v);
       return true;
     };

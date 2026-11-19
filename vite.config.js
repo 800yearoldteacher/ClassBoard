@@ -37,7 +37,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        // mjs: PDF 그리기 부품, bcmap·pfb·ttf: pdf.js 글자 자료(인터넷 없이 PDF를 열기 위해 함께 저장)
+        globPatterns: ['**/*.{js,mjs,css,html,png,svg,woff2,bcmap,pfb,ttf}'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/\/prototypes\//],   // 0단계 시험 페이지는 앱이 가로채지 않습니다
         cleanupOutdatedCaches: true,
