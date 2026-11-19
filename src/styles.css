@@ -231,6 +231,24 @@ button { font: inherit; color: inherit; }
 .pop-item.sel, .pop-swatch.sel { border-color: #3b5568; background: #23303a; color: var(--accent); }
 .pop-item:active, .pop-swatch:active { background: #2a323b; }
 
+/* 위쪽 띠 오른쪽의 '손가락 확대' 체크 상자 */
+.pinch-toggle {
+  position: absolute;
+  right: max(12px, var(--bx));
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pinch-toggle input { width: 24px; height: 24px; accent-color: var(--accent); }
+.pinch-toggle:has(input:checked) { color: var(--text); }
+
 /* 아래 띠 왼쪽의 PC 공유 표시 */
 .share-badge {
   margin-right: auto;

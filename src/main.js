@@ -52,7 +52,6 @@ const tool = { current: 'pen', last: 'pen' };
 
 /* 설정(태블릿 안 meta 저장소에 보관) */
 const settings = {
-  fingerDraw: false,      // 손가락으로도 쓰기
   penAfterErase: true,    // 지운 뒤 펜 복귀
   lockHash: null,         // 잠금 번호 해시(없으면 잠금 꺼짐)
 };
@@ -862,8 +861,6 @@ const drawer = buildDrawer({
       ] },
     { title: '설정', items: [
       { label: '잠금 번호', toggle: () => !!settings.lockHash, onClick: locked(lockMenu) },
-      { label: '손가락으로도 쓰기', toggle: () => settings.fingerDraw,
-        onClick: locked(toggleSetting('fingerDraw', '손가락으로도 쓸 수 있습니다.', '펜을 쓴 뒤에는 손가락으로 쓰지 않습니다.')) },
       { label: '지운 뒤 펜 복귀', toggle: () => settings.penAfterErase,
         onClick: locked(toggleSetting('penAfterErase', '한 번 지우면 펜으로 돌아갑니다.', '지운 뒤에도 지우개로 남습니다.')) },
     ] },
@@ -884,10 +881,8 @@ const input = attachInput({
   getStyle: styleFor,
   onErase: eraseLasso,
   select: selectHooks,
-  isGesturing: () => !!(viewCtl && viewCtl.active),
   usePressure: () => prefs.pressure !== false,
   onDown: closePopover,
-  canFingerDraw: () => settings.fingerDraw,
   onCommit(st, box) {
     if (!state.page) { board.restoreRegion(box); return; }   // 아직 불러오는 중
     const t0 = performance.now();
@@ -936,14 +931,28 @@ const viewCtl = attachView({
   host: boardEl,
   board,
   onStart() {
-    input.cancelTouch();   // 첫 손가락으로 그리던 선은 버립니다(손가락으로도 쓰기를 켰을 때)
     selection.hide();
     laser.clear();
     closePopover();
   },
   onEnd: afterViewChange,
   onWheelChange: afterViewChange,
+  pinchEnabled: () => prefs.pinchZoom !== false,
 });
+
+/* 위쪽 띠 오른쪽 '손가락 확대' 체크 상자: 끄면 두 손가락으로 확대·이동하지 않습니다(이 기기에 기억). */
+const pinchToggle = document.createElement('label');
+pinchToggle.className = 'pinch-toggle';
+pinchToggle.title = '두 손가락으로 칠판을 확대·이동합니다';
+pinchToggle.innerHTML = '<input type="checkbox"><span>손가락 확대</span>';
+const pinchBox = pinchToggle.querySelector('input');
+pinchBox.checked = prefs.pinchZoom !== false;
+pinchBox.addEventListener('change', () => {
+  prefs.pinchZoom = pinchBox.checked;
+  savePrefs(prefs);
+  toast(pinchBox.checked ? '두 손가락으로 확대·이동할 수 있습니다.' : '두 손가락 확대·이동을 껐습니다.');
+});
+document.getElementById('topband').append(pinchToggle);
 
 /* ---------- 화면 배치 ---------- */
 let last = '';

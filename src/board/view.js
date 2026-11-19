@@ -9,7 +9,8 @@ import { BoardCanvas } from './canvas.js';
 const PALM_SIZE = 45;     // 접촉 너비·높이가 이보다 크면(px) 손바닥으로 봅니다
 const PEN_QUIET_MS = 300; // 펜을 쓴 뒤 이 시간 안의 두 손가락 접촉은 무시합니다
 
-export function attachView({ host, board, onStart, onEnd, onWheelChange }) {
+/* pinchEnabled: 위쪽 띠 오른쪽 '손가락 확대' 체크 상자. 끄면 두 손가락 확대·이동을 받지 않습니다(휠은 그대로). */
+export function attachView({ host, board, onStart, onEnd, onWheelChange, pinchEnabled = () => true }) {
   const touches = new Map();   // pointerId → { x, y }
   let g = null;                // 진행 중인 손짓 { v0, m0, d0, view }
   let lastPen = 0;
@@ -56,7 +57,7 @@ export function attachView({ host, board, onStart, onEnd, onWheelChange }) {
 
   host.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'pen') { lastPen = performance.now(); return; }
-    if (e.pointerType !== 'touch' || isPalm(e)) return;
+    if (e.pointerType !== 'touch' || isPalm(e) || !pinchEnabled()) return;
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (touches.size === 2 && !g && performance.now() - lastPen > PEN_QUIET_MS) start();
   }, true);   // 그리기보다 먼저 받아, 두 번째 손가락이면 그리기를 막습니다

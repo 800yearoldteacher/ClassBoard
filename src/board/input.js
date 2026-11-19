@@ -1,6 +1,6 @@
 /* 펜 입력
-   - 펜이 한 번이라도 감지되면 손가락으로는 그리지 않습니다(설정에서 켤 수 있음).
-   - 손바닥이 펜보다 먼저 닿아 시작된 손가락 선은 펜이 닿는 순간 버립니다.
+   - 손가락(터치)으로는 그리지 않습니다. 펜(태블릿)과 마우스(교실 PC·전자칠판)로만 씁니다(사용자 결정).
+     손가락은 두 손가락 확대·이동에만 씁니다(board/view.js).
    - 펜의 필압 0인 점은 버립니다. 펜을 떼는 순간 들어오는 이 점들이 선 끝을 늘입니다(0-A).
    - 예측 그리기는 쓰지 않습니다(기본값 끔).
    - 그리는 동안에는 새 조각만 덧그리고(빠름), 펜을 떼면 main.js가 완성 모양으로 바꿉니다.
@@ -16,8 +16,7 @@ import { baseColor } from './backgrounds.js';
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
-export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw, select, isGesturing = () => false, usePressure = () => true }) {
-  let penSeen = false;
+export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, select, usePressure = () => true }) {
   let active = null;
   let rect = null;
 
@@ -103,12 +102,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
   host.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     onDown();
-    if (e.pointerType === 'pen') {
-      penSeen = true;
-      if (active && active.type === 'touch') cancel();
-    }
-    if (e.pointerType === 'touch' && penSeen && !canFingerDraw()) return;
-    if (e.pointerType === 'touch' && isGesturing()) return;   // 두 손가락 확대·이동 중
+    if (e.pointerType === 'touch') return;   // 손가락·손바닥으로는 그리지 않습니다
     if (active) return;
     rect = host.getBoundingClientRect();
     const mode = getMode();
@@ -184,9 +178,6 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
 
   return {
     get drawing() { return !!active; },
-    get penSeen() { return penSeen; },
-    /* 두 번째 손가락이 닿아 확대·이동이 시작되면, 첫 손가락으로 그리던 것을 버립니다. */
-    cancelTouch() { if (active && active.type === 'touch') cancel(); },
     stats,
   };
 }
