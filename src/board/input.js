@@ -16,7 +16,7 @@ import { baseColor } from './backgrounds.js';
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
-export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw, select }) {
+export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw, select, isGesturing = () => false }) {
   let penSeen = false;
   let active = null;
   let rect = null;
@@ -24,29 +24,36 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
   /* 처리 시간 기록(화면 정보에 표시). 펜이 움직일 때 한 번 처리하는 데 걸린 시간입니다. */
   const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0, commitMs: 0 };
 
+  /* 화면 위치 → 칠판 기준 비율 좌표(확대 상태를 거꾸로 풀어 줍니다) */
   function toPt(ev) {
-    const x = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
-    const y = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height));
+    const { z, x: vx, y: vy } = board.view;
+    const fx = (ev.clientX - rect.left) / rect.width;
+    const fy = (ev.clientY - rect.top) / rect.height;
+    const x = Math.min(1, Math.max(0, vx + fx / z));
+    const y = Math.min(1, Math.max(0, vy + fy / z));
     let p = 0.5;
     if (ev.pointerType === 'pen') p = ev.pressure > 0 ? ev.pressure : 0.2;
     return [r5(x), r5(y), Math.round(p * 1000) / 1000];
   }
 
-  function growBox(a, prev, q, lw) {
-    const W = board.w, H = board.h;
+  /* 바뀐 구역(화면 좌표)을 넓힙니다. */
+  function growBox(a, p0, p1, lw) {
     const pad = lw / 2 + 3;
-    const x0 = Math.min(prev[0], q[0]) * W - pad, y0 = Math.min(prev[1], q[1]) * H - pad;
-    const x1 = Math.max(prev[0], q[0]) * W + pad, y1 = Math.max(prev[1], q[1]) * H + pad;
+    const x0 = Math.min(p0[0], p1[0]) - pad, y0 = Math.min(p0[1], p1[1]) - pad;
+    const x1 = Math.max(p0[0], p1[0]) + pad, y1 = Math.max(p0[1], p1[1]) + pad;
     if (!a.box) { a.box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; return; }
     const bx = Math.min(a.box.x, x0), by = Math.min(a.box.y, y0);
     a.box = { x: bx, y: by, w: Math.max(a.box.x + a.box.w, x1) - bx, h: Math.max(a.box.y + a.box.h, y1) - by };
   }
 
-  /* 새 점까지 짧은 조각 하나를 그립니다. */
+  /* 새 점까지 짧은 조각 하나를 그립니다(화면 좌표, 확대하면 굵기도 함께 커집니다). */
   function drawTo(q) {
     const a = active;
-    const W = board.w, H = board.h;
+    const W = board.w;
+    const z = board.view.z;
     const prev = a.pts.length ? a.pts[a.pts.length - 1] : q;
+    const s0 = board.toScreen(prev[0], prev[1]);
+    const s1 = board.toScreen(q[0], q[1]);
     const ctx = board.liveCtx;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -59,20 +66,20 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
       ctx.setLineDash([8, 7]);
       ctx.lineDashOffset = -a.len;   // 조각이 이어져도 점선 간격이 끊기지 않게 합니다
     } else {
-      lw = previewWidth(a.st, (prev[2] + q[2]) / 2, W);
+      lw = previewWidth(a.st, (prev[2] + q[2]) / 2, W) * z;
       ctx.strokeStyle = a.color;
       ctx.lineWidth = lw;
       ctx.setLineDash([]);
     }
     ctx.beginPath();
-    ctx.moveTo(prev[0] * W, prev[1] * H);
-    ctx.lineTo(q[0] * W, q[1] * H);
+    ctx.moveTo(s0[0], s0[1]);
+    ctx.lineTo(s1[0], s1[1]);
     ctx.stroke();
     if (lasso) {
       ctx.setLineDash([]);
-      a.len += Math.hypot((q[0] - prev[0]) * W, (q[1] - prev[1]) * H);
+      a.len += Math.hypot(s1[0] - s0[0], s1[1] - s0[1]);
     }
-    growBox(a, prev, q, lw);
+    growBox(a, s0, s1, lw);
     a.pts.push(q);
   }
 
@@ -100,6 +107,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
       if (active && active.type === 'touch') cancel();
     }
     if (e.pointerType === 'touch' && penSeen && !canFingerDraw()) return;
+    if (e.pointerType === 'touch' && isGesturing()) return;   // 두 손가락 확대·이동 중
     if (active) return;
     rect = host.getBoundingClientRect();
     const mode = getMode();
@@ -175,6 +183,9 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
 
   return {
     get drawing() { return !!active; },
+    get penSeen() { return penSeen; },
+    /* 두 번째 손가락이 닿아 확대·이동이 시작되면, 첫 손가락으로 그리던 것을 버립니다. */
+    cancelTouch() { if (active && active.type === 'touch') cancel(); },
     stats,
   };
 }

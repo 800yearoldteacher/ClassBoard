@@ -66,9 +66,16 @@ export class Selection {
     this.dropOverlay();
   }
 
-  /* 상자와 버튼을 비율(%)로 놓아, 칠판 크기가 바뀌어도 제자리를 지킵니다. */
+  /* 칠판 기준 비율 상자 → 화면 비율 상자(확대 상태 반영). 화면 비율은 칠판 영역 대비 %로 씁니다. */
+  screenBox(b) {
+    const { z, x, y } = this.board.view;
+    return { x0: (b.x0 - x) * z, y0: (b.y0 - y) * z, x1: (b.x1 - x) * z, y1: (b.y1 - y) * z };
+  }
+
+  /* 상자와 버튼을 화면 비율(%)로 놓아, 칠판 크기가 바뀌어도 제자리를 지킵니다. 확대 상태가 바뀌면 다시 부릅니다. */
   place() {
-    const b = this.box;
+    if (!this.box) return;
+    const b = this.screenBox(this.box);
     const s = this.boxEl.style;
     s.left = `${b.x0 * 100}%`;
     s.top = `${b.y0 * 100}%`;
@@ -77,12 +84,15 @@ export class Selection {
     s.transform = '';
     this.boxEl.hidden = false;
     const d = this.delBtn.style;
-    d.left = `${Math.min(b.x1, 0.97) * 100}%`;
+    d.left = `${Math.min(Math.max(b.x1, 0.1), 0.97) * 100}%`;
     // 위쪽 끝이면 상자 아래에, 아니면 상자 위에 둡니다
-    if (b.y0 < 0.08) { d.top = `${Math.min(b.y1, 0.95) * 100}%`; d.transform = 'translate(-100%, 6px)'; }
-    else { d.top = `${b.y0 * 100}%`; d.transform = 'translate(-100%, calc(-100% - 6px))'; }
+    if (b.y0 < 0.08) { d.top = `${Math.min(Math.max(b.y1, 0), 0.95) * 100}%`; d.transform = 'translate(-100%, 6px)'; }
+    else { d.top = `${Math.min(b.y0, 1) * 100}%`; d.transform = 'translate(-100%, calc(-100% - 6px))'; }
     this.delBtn.hidden = false;
   }
+
+  /* 두 손가락으로 확대·이동하는 동안 잠시 숨깁니다. */
+  hide() { this.boxEl.hidden = true; this.delBtn.hidden = true; }
 
   contains(q, margin = 0.01) {
     const b = this.box;
@@ -92,17 +102,20 @@ export class Selection {
   /* 옮기기 시작: 묶인 선만 그린 투명 캔버스를 상자 자리에 얹습니다. */
   beginMove() {
     const { w: W, h: H, dpr } = this.board;
+    const z = this.board.view.z;
     const b = this.box;
+    const sb = this.screenBox(b);
     const c = document.createElement('canvas');
     c.className = 'sel-overlay';
-    c.width = Math.max(1, Math.round((b.x1 - b.x0) * W * dpr));
-    c.height = Math.max(1, Math.round((b.y1 - b.y0) * H * dpr));
-    c.style.left = `${b.x0 * 100}%`;
-    c.style.top = `${b.y0 * 100}%`;
-    c.style.width = `${(b.x1 - b.x0) * 100}%`;
-    c.style.height = `${(b.y1 - b.y0) * 100}%`;
+    c.width = Math.max(1, Math.round((sb.x1 - sb.x0) * W * dpr));
+    c.height = Math.max(1, Math.round((sb.y1 - sb.y0) * H * dpr));
+    c.style.left = `${sb.x0 * 100}%`;
+    c.style.top = `${sb.y0 * 100}%`;
+    c.style.width = `${(sb.x1 - sb.x0) * 100}%`;
+    c.style.height = `${(sb.y1 - sb.y0) * 100}%`;
     const ctx = c.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, -b.x0 * W * dpr, -b.y0 * H * dpr);
+    // 칠판 좌표로 그린 선을 확대 배율에 맞춰, 상자 왼쪽 위가 캔버스 원점이 되게 옮깁니다
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, -b.x0 * W * dpr * z, -b.y0 * H * dpr * z);
     for (const s of this.strokes) if (s.tool === 'hl') paintStroke(ctx, s, W, H);
     for (const s of this.strokes) if (s.tool !== 'hl') paintStroke(ctx, s, W, H);
     this.host.append(c);
@@ -116,7 +129,8 @@ export class Selection {
     const r = this.raw;
     this.dx = Math.min(1 - r.x1, Math.max(-r.x0, dx));
     this.dy = Math.min(1 - r.y1, Math.max(-r.y0, dy));
-    const t = `translate(${this.dx * this.board.w}px, ${this.dy * this.board.h}px)`;
+    const z = this.board.view.z;
+    const t = `translate(${this.dx * this.board.w * z}px, ${this.dy * this.board.h * z}px)`;
     if (this.overlay) this.overlay.style.transform = t;
     this.boxEl.style.transform = t;
   }

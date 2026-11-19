@@ -48,6 +48,24 @@ button { font: inherit; color: inherit; }
   height: var(--bh);
   background: #1d3b2f;
   touch-action: none;
+  overflow: hidden;   /* 확대했을 때 선택 상자 등이 띠 위로 넘치지 않게 */
+}
+/* 확대했을 때 보이는 '원래 크기' 버튼 */
+#board .zoom-reset {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 10px;
+  background: rgba(20, 24, 28, .8);
+  color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 #board canvas {
   position: absolute;

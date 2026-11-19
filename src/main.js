@@ -7,6 +7,7 @@ import { attachInput } from './board/input.js';
 import { strokesInLasso } from './board/lasso.js';
 import { Laser } from './board/laser.js';
 import { Selection } from './board/select.js';
+import { attachView } from './board/view.js';
 import { History } from './history.js';
 import * as store from './store.js';
 import { icon } from './ui/icons.js';
@@ -39,7 +40,7 @@ board.onRedrawInk = (ctx, w, h) => redrawInk(
   state.hidden ? state.strokes.filter((s) => !state.hidden.has(s.id)) : state.strokes,
   w, h,
 );
-const laser = new Laser(boardEl);
+const laser = new Laser(boardEl, () => board.view);
 const history = new History();
 const selection = new Selection(boardEl, board, { onDelete: deleteSelected });
 
@@ -290,6 +291,8 @@ async function showPage(pageId) {
   state.page = page;
   state.strokes = strokes;
   state.seq = strokes.reduce((m, s) => Math.max(m, s.seq), 0);
+  board.resetView();   // 쪽을 넘기면 원래 크기로 돌아갑니다
+  updateZoomButton();
   board.setBackground(page.bg, picture);
   board.redrawAll();
   matchPenToBackground();
@@ -802,6 +805,7 @@ const input = attachInput({
   getStyle: styleFor,
   onErase: eraseLasso,
   select: selectHooks,
+  isGesturing: () => !!(viewCtl && viewCtl.active),
   onDown: closePopover,
   canFingerDraw: () => settings.fingerDraw,
   onCommit(st, box) {
@@ -814,7 +818,7 @@ const input = attachInput({
     } else {
       // 판서층에 완성 모양을 그리고, 미리보기 조각이 있던 구역만 바꿔 보입니다
       paintStroke(board.inkCtx, s, board.w, board.h);
-      board.restoreRegion(union(box, strokeBounds(s, board.w, board.h)));
+      board.restoreRegion(union(box, board.boardBoxToScreen(strokeBounds(s, board.w, board.h))));
     }
     input.stats.commitMs = performance.now() - t0;
     history.push(state.page.id, { type: 'add', strokes: [s] });
@@ -826,6 +830,38 @@ const input = attachInput({
       store.putLesson(state.lesson).catch(saveError);
     }
   },
+});
+
+/* ---------- 확대·이동 ---------- */
+const zoomBtn = document.createElement('button');
+zoomBtn.type = 'button';
+zoomBtn.className = 'zoom-reset';
+zoomBtn.hidden = true;
+zoomBtn.addEventListener('pointerdown', (e) => e.stopPropagation());   // 칠판에 선이 생기지 않게
+zoomBtn.addEventListener('click', () => { board.setView({ z: 1, x: 0, y: 0 }); afterViewChange(); });
+boardEl.append(zoomBtn);
+
+function updateZoomButton() {
+  const z = board.view.z;
+  zoomBtn.hidden = z <= 1.001;
+  zoomBtn.textContent = `원래 크기 (${Math.round(z * 100)}%)`;
+}
+function afterViewChange() {
+  selection.place();
+  updateZoomButton();
+}
+
+const viewCtl = attachView({
+  host: boardEl,
+  board,
+  onStart() {
+    input.cancelTouch();   // 첫 손가락으로 그리던 선은 버립니다(손가락으로도 쓰기를 켰을 때)
+    selection.hide();
+    laser.clear();
+    closePopover();
+  },
+  onEnd: afterViewChange,
+  onWheelChange: afterViewChange,
 });
 
 /* ---------- 화면 배치 ---------- */
@@ -847,6 +883,7 @@ function applyLayout() {
     s.setProperty('--btn', `${Math.max(36, Math.min(52, Math.min(layout.top, layout.bottom) - 10))}px`);
     board.resize(layout.bw, layout.bh, dpr);
     laser.resize(layout.bw, layout.bh, dpr);
+    selection.place();
     refreshPictureForSize().catch(() => {});
   }
   lastLayout = layout;

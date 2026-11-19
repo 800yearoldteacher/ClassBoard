@@ -7,7 +7,9 @@
 export const LASER_MS = 1500;
 
 export class Laser {
-  constructor(host) {
+  /* getView: 칠판 확대 상태 { z, x, y }를 돌려주는 함수(확대해도 펜 끝을 따라가게 합니다) */
+  constructor(host, getView = () => ({ z: 1, x: 0, y: 0 })) {
+    this.getView = getView;
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'laser-layer';
     this.ctx = this.canvas.getContext('2d');
@@ -43,6 +45,9 @@ export class Laser {
     const { ctx, w: W, h: H } = this;
     ctx.clearRect(0, 0, W, H);
     const tr = this.trail;
+    const { z, x: vx, y: vy } = this.getView();
+    const sx = (p) => (p.x - vx) * z * W;
+    const sy = (p) => (p.y - vy) * z * H;
     const glow = Math.max(6, W * 0.011);
     const core = Math.max(2, W * 0.0035);
     ctx.lineCap = 'round';
@@ -55,10 +60,10 @@ export class Laser {
       const a = Math.max(0, 1 - age / LASER_MS);
       if (a <= 0) continue;
       ctx.beginPath();
-      ctx.moveTo(tr[i].x * W, tr[i].y * H);
+      ctx.moveTo(sx(tr[i]), sy(tr[i]));
       for (let k = i + 1; k <= end; k++) {
-        if (tr[k].start) ctx.moveTo(tr[k].x * W, tr[k].y * H);   // 새 획이 시작되는 곳에서는 선을 끊습니다
-        else ctx.lineTo(tr[k].x * W, tr[k].y * H);
+        if (tr[k].start) ctx.moveTo(sx(tr[k]), sy(tr[k]));   // 새 획이 시작되는 곳에서는 선을 끊습니다
+        else ctx.lineTo(sx(tr[k]), sy(tr[k]));
       }
       ctx.strokeStyle = `rgba(255, 40, 40, ${0.28 * a})`;
       ctx.lineWidth = glow;
@@ -71,11 +76,11 @@ export class Laser {
     if (this.down && tr.length) {
       const p = tr[tr.length - 1];
       ctx.beginPath();
-      ctx.arc(p.x * W, p.y * H, glow * 0.9, 0, Math.PI * 2);
+      ctx.arc(sx(p), sy(p), glow * 0.9, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 40, 40, 0.3)';
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(p.x * W, p.y * H, core, 0, Math.PI * 2);
+      ctx.arc(sx(p), sy(p), core, 0, Math.PI * 2);
       ctx.fillStyle = '#ff5a50';
       ctx.fill();
     }

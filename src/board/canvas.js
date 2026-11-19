@@ -9,6 +9,8 @@
 
 import { paintBackground as paintBg } from './backgrounds.js';
 
+export const MAX_ZOOM = 4;
+
 export class BoardCanvas {
   constructor(host) {
     this.host = host;
@@ -24,6 +26,53 @@ export class BoardCanvas {
     this.dpr = 1;
     this.background = { type: 'chalk' };   // 지금 쪽의 배경(쪽 기록의 bg)
     this.onRedrawInk = () => {};   // 크기가 바뀌면 판서층을 다시 그리도록 main.js가 채웁니다
+    /* 확대 상태: z는 배율(1~4), (x, y)는 화면 왼쪽 위 모서리가 가리키는 칠판 위치(칠판 기준 비율).
+       배경층·판서층은 '지금 보이는 부분'을 그립니다. 그래서 진행 중 층에 복사하는 일은 확대와 상관없이 그대로입니다. */
+    this.view = { z: 1, x: 0, y: 0 };
+  }
+
+  /* ---------- 확대 상태 ---------- */
+  static clampView(v) {
+    const z = Math.min(MAX_ZOOM, Math.max(1, v.z));
+    const m = 1 - 1 / z;
+    return { z, x: Math.min(m, Math.max(0, v.x)), y: Math.min(m, Math.max(0, v.y)) };
+  }
+
+  /* 칠판 좌표(화면 단위 W×H 기준)를 지금 보이는 화면에 맞게 그리는 변환을 ctx에 겁니다. */
+  applyView(ctx) {
+    const d = this.dpr, { z, x, y } = this.view;
+    ctx.setTransform(d * z, 0, 0, d * z, -x * this.w * d * z, -y * this.h * d * z);
+  }
+
+  /* 칠판 기준 비율 좌표 → 화면(칠판 영역 안) 좌표 */
+  toScreen(u, v) {
+    const { z, x, y } = this.view;
+    return [(u - x) * z * this.w, (v - y) * z * this.h];
+  }
+
+  /* 칠판 좌표(W×H 기준 화소)의 상자 → 화면 상자 */
+  boardBoxToScreen(b) {
+    if (!b) return null;
+    const { z, x, y } = this.view;
+    return { x: (b.x - x * this.w) * z, y: (b.y - y * this.h) * z, w: b.w * z, h: b.h * z };
+  }
+
+  /* 쪽을 넘길 때처럼 다시 그리지 않고 확대 상태만 바꿉니다. */
+  resetView() {
+    this.view = { z: 1, x: 0, y: 0 };
+    if (!this.w) return;
+    this.applyView(this.bgCtx);
+    this.applyView(this.inkCtx);
+  }
+
+  /* 확대 상태를 바꾸고 배경·판서층을 새 상태로 선명하게 다시 그립니다. */
+  setView(v) {
+    this.view = BoardCanvas.clampView(v);
+    if (!this.w) return;
+    this.applyView(this.bgCtx);
+    this.applyView(this.inkCtx);
+    this.paintBackground();
+    this.redrawAll();
   }
 
   /* 배경·판서층을 모두 다시 그려 화면에 보입니다(크기 변경, 선 불러오기, 형광 선 추가 때). */
@@ -53,7 +102,7 @@ export class BoardCanvas {
     for (const [cv, ctx] of [[this.bg, this.bgCtx], [this.ink, this.inkCtx]]) {
       cv.width = Math.round(w * dpr);
       cv.height = Math.round(h * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.applyView(ctx);
     }
     this.createLive();
     this.paintBackground();
