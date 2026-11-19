@@ -1,0 +1,69 @@
+/* 교실 PC 보기 화면: 메뉴 없이 16:9 칠판만 화면에 꽉 차게 보입니다. */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #e8ecef;
+  font-family: system-ui, -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  cursor: default;
+  user-select: none;
+}
+[hidden] { display: none !important; }
+
+#board {
+  position: fixed;
+  left: var(--bx, 0px);
+  top: var(--by, 0px);
+  width: var(--bw, 100vw);
+  height: var(--bh, 56.25vw);
+  background: #1d3b2f;
+  overflow: hidden;
+}
+#board canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 구석의 연결 상태: 잠깐 보였다가 숨습니다 */
+#status {
+  position: fixed;
+  right: 14px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .55);
+  font-size: 14px;
+  transition: opacity .6s;
+  z-index: 5;
+}
+#status::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dot, #f5b942);
+}
+#status.fade { opacity: 0; }
+
+/* 공유가 꺼졌거나 방 주소가 잘못되었을 때 가운데 안내 */
+#notice {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  font-size: clamp(18px, 2.4vw, 32px);
+  line-height: 1.6;
+  color: rgba(255, 255, 255, .85);
+  z-index: 4;
+  pointer-events: none;
+}
+#notice small { display: block; font-size: .6em; color: rgba(255, 255, 255, .55); }

@@ -1,7 +1,7 @@
 {
   "name": "classboard",
   "private": true,
-  "version": "0.11.0",
+  "version": "0.12.0",
   "type": "module",
   "description": "갤럭시탭 S펜 판서를 교실 PC에 실시간으로 보여 주는 전자칠판형 웹앱",
   "scripts": {
@@ -15,6 +15,7 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
+    "firebase": "13.2.0",
     "pdfjs-dist": "6.5.438",
     "perfect-freehand": "1.2.3"
   },

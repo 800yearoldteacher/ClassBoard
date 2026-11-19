@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -13,6 +14,13 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // 화면 두 개: 판서 화면(태블릿)과 교실 PC 보기 화면
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        view: fileURLToPath(new URL('./view.html', import.meta.url)),
+      },
+    },
   },
   plugins: [
     VitePWA({
@@ -41,7 +49,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,mjs,css,html,png,svg,woff2,bcmap,pfb,ttf}'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/\/prototypes\//],   // 0단계 시험 페이지는 앱이 가로채지 않습니다
+        // 0단계 시험 페이지와 교실 PC 보기 화면은 판서 화면으로 바꿔치기하지 않습니다
+        navigateFallbackDenylist: [/\/prototypes\//, /\/view\.html/],
         cleanupOutdatedCaches: true,
       },
     }),

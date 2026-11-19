@@ -217,6 +217,26 @@ button { font: inherit; color: inherit; }
 .pop-item.sel, .pop-swatch.sel { border-color: #3b5568; background: #23303a; color: var(--accent); }
 .pop-item:active, .pop-swatch:active { background: #2a323b; }
 
+/* 아래 띠 왼쪽의 PC 공유 표시 */
+.share-badge {
+  margin-right: auto;
+  margin-left: max(12px, var(--bx));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.share-badge::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f5b942;
+}
+.share-badge.on { color: var(--text); }
+.share-badge.on::before { background: #3ecf8e; }
+
 /* ---------- 보조 메뉴 손잡이 ---------- */
 .handle {
   position: fixed;

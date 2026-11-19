@@ -172,14 +172,16 @@ bg.type: 'chalk' | 'white' | 'grid' | 'lined' | 'kkak' | 'image' | 'pdf'
 ### 8-2. 수업 방 (Firebase Realtime Database)
 
 ```text
-rooms/{roomId}/meta                          { owner: uid, updatedAt }
-rooms/{roomId}/view                          { pageId, zoom, cx, cy }
-rooms/{roomId}/order                         [pageId, ...]
+rooms/{roomId}/meta                          { owner: uid, createdAt }
+rooms/{roomId}/state                         { sharing, pageId, bg, view: { z, x, y }, at }   ← 태블릿이 지금 보는 쪽과 확대 상태
 rooms/{roomId}/pages/{pageId}/bg             { type, img? }    img: 압축 그림(data URL)
-rooms/{roomId}/pages/{pageId}/strokes/{id}   Stroke
+rooms/{roomId}/pages/{pageId}/strokes/{id}   { seq, tool, color, w, sim, p }   p: 점 목록을 줄인 글자 "x,y,p;..."(×10000, 필압 ×100)
 rooms/{roomId}/live/{strokeId}               그리는 중인 선(0.05초 안팎마다 점을 묶어 보냄)
 rooms/{roomId}/laser/{laserId}               레이저 잔상(점을 묶어 보내고, 잔상이 사라지면 지움)
 ```
+
+- 쪽 순서는 올리지 않습니다. 보기 화면은 늘 태블릿이 지금 보는 쪽을 보여 주므로 순서를 바꾼 결과가 그대로 반영됩니다.
+- 공유를 켤 때 지난 `pages`·`live`·`laser`를 비우고, 태블릿이 쪽을 처음 보여 줄 때 그 쪽의 배경과 선을 통째로 올린 뒤 바뀐 선만 더하고 뺍니다.
 
 ### 8-3. 보안 규칙 (초안, 0-B와 4단계에서 다듬음)
 

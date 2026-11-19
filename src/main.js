@@ -21,6 +21,7 @@ import { hashPin } from './lock.js';
 import { openPageManager } from './ui/pages.js';
 import { BG_TYPES, paintBackground, isDark, bgName } from './board/backgrounds.js';
 import * as media from './media.js';
+import * as share from './share.js';
 
 /* ---------- 상태 ---------- */
 const prefs = loadPrefs();
@@ -154,11 +155,13 @@ function removeStrokes(list) {
   state.strokes = state.strokes.filter((s) => !ids.has(s.id));
   board.redrawAll();
   store.deleteStrokes([...ids]).catch(saveError);
+  share.removeStrokes(state.page.id, [...ids]);
 }
 function addStrokes(list) {
   state.strokes = state.strokes.concat(list).sort((a, b) => a.seq - b.seq);
   board.redrawAll();
   store.putStrokes(list.map(toRecord)).catch(saveError);
+  share.putStrokes(state.page.id, list);
 }
 
 function updateHistoryButtons() {
@@ -178,6 +181,7 @@ function moveStrokes(list, dx, dy) {
   }
   board.redrawAll();
   store.putStrokes(list.map(toRecord)).catch(saveError);
+  share.putStrokes(state.page.id, list);
 }
 
 function undo() {
@@ -297,6 +301,7 @@ async function showPage(pageId) {
   board.redrawAll();
   matchPenToBackground();
   prefetchNeighbors();
+  share.showPage(page, strokes, board.view);
   updatePageBar();
   updateHistoryButtons();
   store.setMeta('currentPageId', page.id).catch(() => {});
@@ -383,6 +388,7 @@ async function pickBackground() {
   matchPenToBackground();
   drawer.close();
   store.putPage(state.page).then(() => store.dropAssetIfUnused(oldAsset)).catch(saveError);
+  share.setBackground(state.page);
   toast(`배경을 ${bgName(state.page.bg)}으로 바꿨습니다.`);   // 다섯 이름 모두 받침으로 끝나 '으로'를 씁니다
 }
 
@@ -593,6 +599,7 @@ async function removePage(pageId, n) {
     state.lesson = await store.deletePage(state.lesson, pageId);
     if (gone && gone.bg) store.dropAssetIfUnused(gone.bg.assetId).catch(() => {});
     history.forget(pageId);
+    share.removePage(pageId);
     if (state.page.id === pageId) {
       await showPage(state.lesson.pageIds[Math.min(idx, state.lesson.pageIds.length - 1)]);
     } else {
@@ -738,6 +745,64 @@ function toggleSetting(key, onText, offText) {
   };
 }
 
+/* ---------- PC 공유 ----------
+   공유를 켜면 수업 방에 지금 쪽을 올리고, 교실 PC의 보기 주소(view.html#방코드)에 나타납니다.
+   방 코드와 공유 상태는 태블릿에 저장해, 다음에 앱을 열어도 같은 주소로 이어서 공유합니다. */
+const shareBadge = document.createElement('div');
+shareBadge.className = 'share-badge';
+shareBadge.hidden = true;
+document.getElementById('bottomband').prepend(shareBadge);
+
+share.onStatus((st) => {
+  shareBadge.hidden = !st.enabled;
+  shareBadge.classList.toggle('on', st.enabled && st.connected);
+  shareBadge.textContent = st.connected ? 'PC 공유 중' : 'PC 공유: 다시 연결 중';
+  drawer.refresh();
+});
+
+async function startSharing() {
+  toast('PC 공유를 켜는 중입니다…', { duration: 0 });
+  const code = await share.enable(await store.getMeta('roomId'));
+  if (!code) {
+    toast('PC 공유를 켜지 못했습니다. 인터넷 연결을 확인합니다.', { duration: 6000 });
+    return false;
+  }
+  await store.setMeta('roomId', code);
+  await store.setMeta('sharing', true);
+  if (state.page) share.showPage(state.page, state.strokes, board.view);
+  return true;
+}
+
+async function toggleSharing() {
+  if (share.status().enabled) {
+    share.disable();
+    await store.setMeta('sharing', false);
+    toast('PC 공유를 껐습니다.');
+    return;
+  }
+  if (await startSharing()) {
+    toast('PC 공유를 켰습니다. 교실 PC에서 보기 주소를 엽니다.', { duration: 5000 });
+  }
+}
+
+async function copyViewUrl() {
+  const code = share.status().room || (await store.getMeta('roomId'));
+  if (!code) { toast('먼저 PC 공유를 켭니다.'); return; }
+  const url = share.viewUrl(code);
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('보기 주소를 복사했습니다. 교실 PC 크롬에서 열고 즐겨찾기에 등록합니다.', { duration: 5000 });
+  } catch (_) {
+    openModal({ title: '보기 주소', message: url, actions: [{ label: '닫기', cancel: true }] });
+  }
+}
+
+function shareIntro() {
+  const st = share.status();
+  if (!st.enabled) return st.error ? `꺼져 있습니다. <small>(${escapeHtml(st.error)})</small>` : '꺼져 있습니다.';
+  return `${st.connected ? '연결됨' : '다시 연결 중'} · 방 <strong>${st.room}</strong><br><small>${escapeHtml(share.viewUrl())}</small>`;
+}
+
 /* ---------- 메뉴 만들기 ---------- */
 buildToolbar(document.getElementById('tools'), {
   'tool-pen': togglePen,
@@ -767,8 +832,9 @@ const drawer = buildDrawer({
       { label: '카메라 촬영', onClick: takePhoto },
       { label: '배경 바꾸기', onClick: pickBackground },
     ] },
-    { title: '공유', items: [
-      { label: 'PC 공유 켜기', later: 's4' },
+    { title: '공유', intro: shareIntro, items: [
+      { label: 'PC 공유', toggle: () => share.status().enabled, onClick: toggleSharing },
+      { label: '보기 주소 복사', onClick: copyViewUrl },
     ] },
     { title: '수업',
       intro: () => (state.lesson
@@ -824,6 +890,7 @@ const input = attachInput({
     history.push(state.page.id, { type: 'add', strokes: [s] });
     updateHistoryButtons();
     store.putStroke(toRecord(s)).catch(saveError);
+    share.putStrokes(s.pageId, [s]);
     // 수업 목록의 '마지막 수정' 시각은 30초에 한 번만 고칩니다
     if (Date.now() - state.lesson.updatedAt > 30000) {
       state.lesson = { ...state.lesson, updatedAt: Date.now() };
@@ -910,6 +977,8 @@ async function start() {
     const created = await store.createLesson(defaultTitle());
     await openLesson(created.lesson.id);
   }
+  // 지난번에 공유를 켜 둔 채로 닫았으면 같은 방으로 다시 공유합니다(인터넷이 없으면 조용히 넘어갑니다)
+  if (await store.getMeta('sharing')) startSharing().then((ok) => { if (ok) toast('PC 공유를 이어서 켰습니다.'); });
 }
 
 start().catch((e) => {
