@@ -3,10 +3,11 @@
    - pages:   쪽 { id, lessonId, bg }
    - strokes: 선 { id, pageId, seq, tool, color, w, sim, pts }  ← 선을 하나 그을 때마다 한 줄씩 저장합니다
    - meta:    지금 연 수업·쪽 같은 작은 값 { key, value }
+   - assets:  사진·PDF 원본 { id, kind: 'image' | 'pdf', name, blob, w?, h?, pages? }  (판 2에서 더함)
    선을 쪽 안에 배열로 넣으면 선이 2,000개일 때 한 줄 그을 때마다 쪽 전체를 다시 써야 해서, 선은 따로 저장합니다. */
 
 const DB_NAME = 'classboard';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -24,8 +25,14 @@ function open() {
         db.createObjectStore('strokes', { keyPath: 'id' }).createIndex('pageId', 'pageId');
       }
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets', { keyPath: 'id' });
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // 새 판이 다른 창에서 저장소를 고치려 하면 이 창의 연결을 닫아 막지 않습니다
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error('저장소가 다른 창에서 사용 중입니다.'));
   });
@@ -79,6 +86,21 @@ export async function setPageOrder(lesson, pageIds) {
   const next = { ...lesson, pageIds: pageIds.slice(), updatedAt: Date.now() };
   await putLesson(next);
   return next;
+}
+
+/* ---------- 사진·PDF 원본 ---------- */
+export function putAsset(asset) { return put('assets', asset); }
+export function getAsset(id) { return get('assets', id); }
+
+/* 어느 쪽도 쓰지 않는 원본을 지웁니다(쪽을 지운 뒤 부릅니다). */
+export async function dropAssetIfUnused(assetId) {
+  if (!assetId) return;
+  const db = await open();
+  const pages = await result(db.transaction('pages').objectStore('pages').getAll());
+  if (pages.some((p) => p.bg && p.bg.assetId === assetId)) return;
+  const tx = db.transaction('assets', 'readwrite');
+  tx.objectStore('assets').delete(assetId);
+  await done(tx);
 }
 
 /* 쪽 하나와 그 쪽의 선을 모두 지우고, 수업의 쪽 순서에서도 뺍니다(한 번에 저장). */

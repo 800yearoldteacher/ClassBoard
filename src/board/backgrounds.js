@@ -14,9 +14,26 @@ export const BG_TYPES = [
 const CHALK = '#1d3b2f';
 const PAPER = '#fbfbf7';
 
-export function isDark(bg) { return !bg || bg.type !== 'white'; }
+/* 사진·PDF 쪽은 밝은 자료 위에 글씨를 쓰므로 펜 기본 색은 검정입니다(남는 곳은 칠판색). */
+const LIGHT = ['white', 'image', 'pdf'];
+export function isDark(bg) { return !bg || !LIGHT.includes(bg.type); }
 export function baseColor(bg) { return isDark(bg) ? CHALK : PAPER; }
-export function bgName(bg) { return (BG_TYPES.find((b) => b.type === (bg && bg.type)) || BG_TYPES[0]).name; }
+export function bgName(bg) {
+  if (bg && bg.type === 'image') return '사진';
+  if (bg && bg.type === 'pdf') return 'PDF';
+  return (BG_TYPES.find((b) => b.type === (bg && bg.type)) || BG_TYPES[0]).name;
+}
+
+/* 사진·PDF를 칠판 안에 잘리지 않게 맞춰 가운데에 놓습니다. 남는 곳은 칠판색입니다(사용자 결정). */
+function paintPicture(ctx, img, W, H) {
+  ctx.fillStyle = CHALK;
+  ctx.fillRect(0, 0, W, H);
+  if (!img) return;
+  const s = Math.min(W / img.width, H / img.height);
+  const w = img.width * s, h = img.height * s;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+}
 
 function lines(ctx, list, color, width, dash = null) {
   ctx.save();
@@ -29,11 +46,12 @@ function lines(ctx, list, color, width, dash = null) {
   ctx.restore();
 }
 
-/* 칠판 크기 W×H(화면 단위)에 배경을 그립니다. */
-export function paintBackground(ctx, bg, W, H) {
+/* 칠판 크기 W×H(화면 단위)에 배경을 그립니다. 사진·PDF 쪽은 img(미리 풀어 둔 그림)를 씁니다. */
+export function paintBackground(ctx, bg, W, H, img = null) {
+  const type = bg && bg.type;
+  if (type === 'image' || type === 'pdf') { paintPicture(ctx, img, W, H); return; }
   ctx.fillStyle = baseColor(bg);
   ctx.fillRect(0, 0, W, H);
-  const type = bg && bg.type;
   const thin = Math.max(1, W / 1600);
 
   if (type === 'grid') {

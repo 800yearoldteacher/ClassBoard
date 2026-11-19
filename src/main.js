@@ -19,6 +19,7 @@ import { openModal, confirmModal, textModal, pinModal, listModal } from './ui/mo
 import { hashPin } from './lock.js';
 import { openPageManager } from './ui/pages.js';
 import { BG_TYPES, paintBackground, isDark, bgName } from './board/backgrounds.js';
+import * as media from './media.js';
 
 /* ---------- 상태 ---------- */
 const prefs = loadPrefs();
@@ -283,12 +284,13 @@ async function showPage(pageId) {
   const page = await store.getPage(pageId);
   if (!page) throw new Error('쪽을 찾지 못했습니다.');
   const strokes = await store.getStrokes(page.id);
+  const picture = await media.bitmapFor(page.bg);
   laser.clear();
   selection.clear();
   state.page = page;
   state.strokes = strokes;
   state.seq = strokes.reduce((m, s) => Math.max(m, s.seq), 0);
-  board.setBackground(page.bg);
+  board.setBackground(page.bg, picture);
   board.redrawAll();
   matchPenToBackground();
   updatePageBar();
@@ -314,7 +316,9 @@ function goPage(delta) {
 function addPage() {
   return guarded(async () => {
     const i = pageIndex();
-    const { lesson, page } = await store.insertPage(state.lesson, i + 1, state.page.bg);
+    // 사진·PDF 쪽 뒤에 넣는 빈 쪽은 칠판으로 합니다(사진을 그대로 베끼지 않습니다)
+    const bg = ['image', 'pdf'].includes(state.page.bg.type) ? { type: 'chalk' } : state.page.bg;
+    const { lesson, page } = await store.insertPage(state.lesson, i + 1, bg);
     state.lesson = lesson;
     await showPage(page.id);
     toast(`${i + 2}쪽을 새로 넣었습니다.`);
@@ -368,12 +372,13 @@ async function pickBackground() {
     });
   });
   if (!chosen || chosen === state.page.bg.type) return;
+  const oldAsset = state.page.bg.assetId;
   state.page = { ...state.page, bg: { type: chosen } };
   board.setBackground(state.page.bg);
   board.compose();
   matchPenToBackground();
   drawer.close();
-  store.putPage(state.page).catch(saveError);
+  store.putPage(state.page).then(() => store.dropAssetIfUnused(oldAsset)).catch(saveError);
   toast(`배경을 ${bgName(state.page.bg)}으로 바꿨습니다.`);   // 다섯 이름 모두 받침으로 끝나 '으로'를 씁니다
 }
 
@@ -407,6 +412,48 @@ async function toggleFullscreen() {
 }
 document.addEventListener('fullscreenchange', showFullscreenButton);
 
+/* ---------- 사진·카메라 ----------
+   고른 사진마다 지금 쪽 뒤에 새 쪽을 하나씩 넣고, 사진을 배경으로 씁니다. */
+function pickFiles({ accept, multiple = false, capture = null }) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.multiple = multiple;
+    if (capture) input.setAttribute('capture', capture);
+    input.addEventListener('change', () => resolve([...input.files]), { once: true });
+    input.addEventListener('cancel', () => resolve([]), { once: true });
+    input.click();
+  });
+}
+
+async function insertPictures(files) {
+  const images = files.filter((f) => f.type.startsWith('image/'));
+  if (!images.length) return;
+  drawer.close();
+  await guarded(async () => {
+    const start = pageIndex() + 1;
+    let firstId = null;
+    toast(images.length > 1 ? `사진 ${images.length}장을 넣는 중입니다…` : '사진을 넣는 중입니다…', { duration: 0 });
+    for (let i = 0; i < images.length; i++) {
+      const assetId = await media.importImage(images[i]);
+      const { lesson, page } = await store.insertPage(state.lesson, start + i, { type: 'image', assetId });
+      state.lesson = lesson;
+      if (!firstId) firstId = page.id;
+    }
+    await showPage(firstId);
+    toast(images.length > 1 ? `사진 ${images.length}장을 ${start + 1}쪽부터 넣었습니다.` : `사진을 ${start + 1}쪽에 넣었습니다.`);
+  });
+}
+
+async function importPictures() {
+  insertPictures(await pickFiles({ accept: 'image/*', multiple: true }));
+}
+async function takePhoto() {
+  // 태블릿 기본 카메라 앱이 열립니다(실물화상기 대용)
+  insertPictures(await pickFiles({ accept: 'image/*', capture: 'environment' }));
+}
+
 /* ---------- 쪽 관리 창 ---------- */
 const THUMB_W = 320, THUMB_H = 180;
 
@@ -422,7 +469,7 @@ async function drawThumb(pageId, canvas) {
   const strokes = isCurrent
     ? state.strokes.map((s) => ({ ...s, _path: null, _key: null }))
     : await store.getStrokes(pageId);
-  paintBackground(ctx, page && page.bg, THUMB_W, THUMB_H);
+  paintBackground(ctx, page && page.bg, THUMB_W, THUMB_H, await media.bitmapFor(page && page.bg));
   for (const s of strokes) if (s.tool === 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
   for (const s of strokes) if (s.tool !== 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
 }
@@ -439,7 +486,9 @@ async function removePage(pageId, n) {
   let removed = false;
   await guarded(async () => {
     const idx = state.lesson.pageIds.indexOf(pageId);
+    const gone = await store.getPage(pageId);
     state.lesson = await store.deletePage(state.lesson, pageId);
+    if (gone && gone.bg) store.dropAssetIfUnused(gone.bg.assetId).catch(() => {});
     history.forget(pageId);
     if (state.page.id === pageId) {
       await showPage(state.lesson.pageIds[Math.min(idx, state.lesson.pageIds.length - 1)]);
@@ -611,8 +660,8 @@ const drawer = buildDrawer({
   sections: [
     { title: '자료', items: [
       { label: 'PDF 열기', later: 's3' },
-      { label: '이미지 불러오기', later: 's3' },
-      { label: '카메라 촬영', later: 's3' },
+      { label: '이미지 불러오기', onClick: importPictures },
+      { label: '카메라 촬영', onClick: takePhoto },
       { label: '배경 바꾸기', onClick: pickBackground },
     ] },
     { title: '공유', items: [

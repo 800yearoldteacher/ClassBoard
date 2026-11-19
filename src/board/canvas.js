@@ -82,12 +82,14 @@ export class BoardCanvas {
 
   paintBackground() {
     if (!this.w) return;
-    paintBg(this.bgCtx, this.background, this.w, this.h);
+    paintBg(this.bgCtx, this.background, this.w, this.h, this.picture);
   }
 
-  /* 쪽을 넘기거나 배경을 바꿀 때 씁니다. 화면 반영은 redrawAll()이나 compose()로 합니다. */
-  setBackground(bg) {
+  /* 쪽을 넘기거나 배경을 바꿀 때 씁니다. 사진·PDF 쪽은 picture(미리 풀어 둔 그림)를 함께 줍니다.
+     화면 반영은 redrawAll()이나 compose()로 합니다. */
+  setBackground(bg, picture = null) {
     this.background = bg || { type: 'chalk' };
+    this.picture = picture;
     this.paintBackground();
   }
 
