@@ -1,8 +1,8 @@
 /* 태블릿 → 수업 방 올리기
    수업 방(rooms/{방코드}) 구조
    - meta                       { owner: uid, createdAt }      방 주인(보안 규칙이 이 uid만 쓰게 합니다)
-   - state                      { sharing, pageId, bg, view, at } 지금 태블릿이 보는 쪽과 확대 상태
-   - pages/{pageId}/bg          { type, img? }                 쪽 배경(사진·PDF 그림은 4-3)
+   - state                      { sharing, ended?, pageId, bg, view, at } 지금 태블릿이 보는 쪽과 확대 상태(ended: 수업 종료)
+   - pages/{pageId}/bg          { type, img? }                 쪽 배경(사진·PDF 쪽은 화면용 그림 img)
    - pages/{pageId}/strokes/{id}  선 한 줄(점 목록은 짧은 글자로 줄임, room.js)
    - live/{id}, laser/{id}      그리는 중인 선, 레이저 잔상(4-2)
    수업 방에는 태블릿이 본 쪽의 배경과 선만 올리고, 원본 파일은 올리지 않습니다.
@@ -34,12 +34,23 @@ function newCode() {
   return Array.from(a, (b) => chars[b % 32]).join('');
 }
 
-async function load() {
-  if (fb) return fb;
+/* 인터넷이 없으면 Firebase 요청이 끝나지 않고 기다리므로, 정한 시간이 지나면 실패로 봅니다. */
+function timeout(promise, ms = 8000) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('시간 초과')), ms))]);
+}
+
+let loading = null;
+function load() {
+  if (fb) return Promise.resolve(fb);
+  if (!loading) loading = loadOnce().catch((e) => { loading = null; throw e; });
+  return loading;
+}
+
+async function loadOnce() {
   const [appMod, authMod, dbMod] = await Promise.all([
     import('firebase/app'), import('firebase/auth'), import('firebase/database'),
   ]);
-  const app = appMod.initializeApp(firebaseConfig);
+  const app = appMod.getApps()[0] || appMod.initializeApp(firebaseConfig);
   const auth = authMod.getAuth(app);
   // 이 기기에 남아 있는 익명 로그인을 먼저 쓰고, 없으면 새로 받습니다
   let user = await new Promise((resolve) => {
@@ -74,8 +85,8 @@ async function claim(code) {
 export async function enable(savedCode) {
   error = '';
   try {
-    await load();
-    room = await claim(savedCode);
+    await timeout(load(), 15000);
+    room = await timeout(claim(savedCode));
     await fb.update(R(''), { pages: null, live: null, laser: null, state: { sharing: true, at: fb.serverTimestamp() } });
     uploaded.clear();
     enabled = true;
@@ -210,4 +221,61 @@ export function removePage(pageId) {
   if (!enabled) return;
   uploaded.delete(pageId);
   write(fb.remove(R(`pages/${pageId}`)));
+}
+
+/* ---------- 수업 종료와 수업 방 다시 만들기 ---------- */
+
+/* 이 기기가 주인인 방이면 true(주인이 아니면 쓸 수도 없고 지울 것도 없습니다) */
+async function ownsRoom(code) {
+  if (!code || !ROOM_RE.test(code)) return false;
+  return (await timeout(fb.get(fb.ref(fb.db, `rooms/${code}/meta/owner`)))).val() === fb.uid;
+}
+
+/* 수업 종료: 공유를 끄고, 수업 방에 올린 쪽·긋고 있는 선·레이저를 지웁니다.
+   방 코드(meta)는 남겨 보기 주소를 그대로 쓰고, PC에는 '수업이 끝났습니다'를 보입니다.
+   지웠거나 지울 것이 없으면 true, 인터넷 문제로 지우지 못했으면 false를 돌려줍니다. */
+export async function endRoom(savedCode) {
+  const code = room || savedCode;
+  relayEnd();
+  enabled = false;
+  uploaded.clear();
+  emit();
+  if (!code || !ROOM_RE.test(code)) return true;
+  try {
+    await timeout(load(), 15000);
+    if (!(await ownsRoom(code))) return true;
+    if (enabled) return true;   // 그사이 공유를 다시 켰으면 켤 때 이미 비웠습니다
+    await timeout(fb.update(fb.ref(fb.db, `rooms/${code}`), {
+      pages: null, live: null, laser: null,
+      state: { sharing: false, ended: true, at: fb.serverTimestamp() },
+    }));
+    return true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+}
+
+/* 수업 방 다시 만들기: 이 기기가 주인인 옛 방을 통째로 지우고 새 방 코드를 만듭니다.
+   옛 보기 주소는 더 이상 쓸 수 없습니다. 새 코드를 돌려주고, 실패하면 null입니다. */
+export async function recreate(savedCode) {
+  const old = room || savedCode;
+  relayEnd();
+  enabled = false;
+  uploaded.clear();
+  error = '';
+  try {
+    await timeout(load(), 15000);
+    if (await ownsRoom(old)) await timeout(fb.remove(fb.ref(fb.db, `rooms/${old}`)));
+    const c = newCode();
+    await timeout(fb.set(fb.ref(fb.db, `rooms/${c}/meta`), { owner: fb.uid, createdAt: fb.serverTimestamp() }));
+    room = c;
+    emit();
+    return c;
+  } catch (e) {
+    console.error(e);
+    error = String((e && e.code) || (e && e.message) || e);
+    emit();
+    return null;
+  }
 }

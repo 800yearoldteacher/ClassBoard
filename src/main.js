@@ -759,7 +759,11 @@ function toggleSetting(key, onText, offText) {
 
 /* ---------- PC 공유 ----------
    공유를 켜면 수업 방에 지금 쪽을 올리고, 교실 PC의 보기 주소(view.html#방코드)에 나타납니다.
-   방 코드와 공유 상태는 태블릿에 저장해, 다음에 앱을 열어도 같은 주소로 이어서 공유합니다. */
+   방 코드와 공유 상태는 태블릿에 저장합니다(meta: roomId, sharing, shareDay, roomDirty).
+   - 같은 날 앱을 다시 열면 같은 주소로 이어서 공유합니다(수업 중 앱이 꺼졌을 때).
+   - 날짜가 바뀐 뒤 열면 지난 수업 방 자료를 지우고 공유는 꺼 둡니다(수업 종료를 잊었을 때).
+   - roomDirty: 수업 방에 지울 자료가 남아 있을 수 있음. 수업 종료로 지우면 false가 됩니다. */
+const today = () => new Date().toLocaleDateString('sv-SE');   // 2026-11-19 꼴(이 기기 시간대)
 const shareBadge = document.createElement('div');
 shareBadge.className = 'share-badge';
 shareBadge.hidden = true;
@@ -781,6 +785,8 @@ async function startSharing() {
   }
   await store.setMeta('roomId', code);
   await store.setMeta('sharing', true);
+  await store.setMeta('shareDay', today());
+  await store.setMeta('roomDirty', true);
   if (state.page) share.showPage(state.page, state.strokes, board.view);
   return true;
 }
@@ -797,16 +803,85 @@ async function toggleSharing() {
   }
 }
 
+async function copyText(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('보기 주소를 복사했습니다. 교실 PC 크롬에서 열고 즐겨찾기에 등록합니다.', { duration: 5000 });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/* 보기 주소를 창에 보여 줍니다(복사가 막힌 브라우저에서도 보고 옮겨 적을 수 있게). */
+function showViewUrl(url, title = '보기 주소', message = '') {
+  openModal({
+    title,
+    message,
+    build: (body) => {
+      const p = document.createElement('p');
+      p.className = 'view-url';
+      p.textContent = url;
+      body.append(p);
+    },
+    actions: [
+      { label: '닫기', cancel: true },
+      { label: '복사', primary: true, onClick: () => { copyText(url); } },
+    ],
+  });
+}
+
 async function copyViewUrl() {
   const code = share.status().room || (await store.getMeta('roomId'));
   if (!code) { toast('먼저 PC 공유를 켭니다.'); return; }
   const url = share.viewUrl(code);
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('보기 주소를 복사했습니다. 교실 PC 크롬에서 열고 즐겨찾기에 등록합니다.', { duration: 5000 });
-  } catch (_) {
-    openModal({ title: '보기 주소', message: url, actions: [{ label: '닫기', cancel: true }] });
+  if (!(await copyText(url))) showViewUrl(url);
+}
+
+/* 수업 종료: 수업 방에 올린 판서와 그림을 지우고 공유를 끕니다. 보기 주소와 태블릿의 수업 파일은 그대로입니다. */
+async function endLesson() {
+  const code = share.status().room || (await store.getMeta('roomId'));
+  const ok = await confirmModal({
+    title: '수업 종료',
+    message: code
+      ? '교실 PC에 올린 판서와 그림을 지우고 PC 공유를 끕니다. 태블릿의 수업 파일은 그대로 남고, 보기 주소도 바뀌지 않습니다.'
+      : 'PC 공유를 쓰지 않아 교실 PC에서 지울 자료가 없습니다. 태블릿의 수업 파일은 그대로 남습니다.',
+    ok: '수업 종료',
+    danger: !!code,
+  });
+  if (!ok || !code) return;
+  drawer.close();
+  await store.setMeta('sharing', false);
+  toast('교실 PC 자료를 지우는 중입니다…', { duration: 0 });
+  if (await share.endRoom(code)) {
+    await store.setMeta('roomDirty', false);
+    toast('수업을 마쳤습니다. 교실 PC에 올린 자료를 지웠습니다.', { duration: 5000 });
+  } else {
+    toast('인터넷 연결이 없어 교실 PC 자료를 지우지 못했습니다. 다음에 앱을 열 때 지웁니다.', { duration: 6000 });
   }
+}
+
+/* 수업 방 다시 만들기: 앱을 지웠다 다시 설치해 옛 방에 쓸 수 없을 때 새 보기 주소를 만듭니다. */
+async function remakeRoom() {
+  const ok = await confirmModal({
+    title: '수업 방 다시 만들기',
+    message: '새 보기 주소를 만들고 지금 수업 방을 지웁니다. 지금 보기 주소는 더 이상 쓸 수 없으므로 교실 PC의 즐겨찾기를 새 주소로 바꿔야 합니다.',
+    ok: '다시 만들기',
+    danger: true,
+  });
+  if (!ok) return;
+  const wasOn = share.status().enabled;
+  toast('새 수업 방을 만드는 중입니다…', { duration: 0 });
+  const code = await share.recreate(await store.getMeta('roomId'));
+  if (!code) {
+    toast('수업 방을 만들지 못했습니다. 인터넷 연결을 확인합니다.', { duration: 6000 });
+    return;
+  }
+  await store.setMeta('roomId', code);
+  await store.setMeta('roomDirty', false);
+  if (wasOn) await startSharing();
+  toast(wasOn ? '새 수업 방으로 PC 공유를 이어서 켰습니다.' : '새 수업 방을 만들었습니다.');
+  showViewUrl(share.viewUrl(code), '새 보기 주소', '교실 PC 크롬에서 이 주소를 열고, 옛 즐겨찾기를 지운 뒤 새로 등록합니다.');
 }
 
 function shareIntro() {
@@ -857,12 +932,13 @@ const drawer = buildDrawer({
         { label: '수업 열기', onClick: locked(chooseLesson) },
         { label: '수업 이름 바꾸기', onClick: locked(renameLesson) },
         { label: '이 쪽 모두 지우기', onClick: locked(clearPage) },
-        { label: '수업 종료', later: 's4' },
+        { label: '수업 종료', onClick: locked(endLesson) },
       ] },
     { title: '설정', items: [
       { label: '잠금 번호', toggle: () => !!settings.lockHash, onClick: locked(lockMenu) },
       { label: '지운 뒤 펜 복귀', toggle: () => settings.penAfterErase,
         onClick: locked(toggleSetting('penAfterErase', '한 번 지우면 펜으로 돌아갑니다.', '지운 뒤에도 지우개로 남습니다.')) },
+      { label: '수업 방 다시 만들기', onClick: locked(remakeRoom) },
     ] },
   ],
 });
@@ -1002,8 +1078,18 @@ async function start() {
     const created = await store.createLesson(defaultTitle());
     await openLesson(created.lesson.id);
   }
-  // 지난번에 공유를 켜 둔 채로 닫았으면 같은 방으로 다시 공유합니다(인터넷이 없으면 조용히 넘어갑니다)
-  if (await store.getMeta('sharing')) startSharing().then((ok) => { if (ok) toast('PC 공유를 이어서 켰습니다.'); });
+  // 오늘 공유를 켜 둔 채로 닫았으면 같은 방으로 다시 공유합니다(인터넷이 없으면 조용히 넘어갑니다).
+  // 날짜가 바뀌었으면 수업 종료를 잊은 것으로 보고, 지난 수업 방 자료를 조용히 지우고 공유는 꺼 둡니다.
+  const roomId = await store.getMeta('roomId');
+  if (await store.getMeta('sharing') && (await store.getMeta('shareDay')) === today()) {
+    startSharing().then((ok) => { if (ok) toast('PC 공유를 이어서 켰습니다.'); });
+  } else {
+    await store.setMeta('sharing', false);
+    // roomDirty가 없는 예전 판(0.13.0 이하)은 지울 자료가 있는 것으로 봅니다
+    if (roomId && (await store.getMeta('roomDirty')) !== false) {
+      share.endRoom(roomId).then((done) => { if (done) store.setMeta('roomDirty', false); });
+    }
+  }
 }
 
 start().catch((e) => {

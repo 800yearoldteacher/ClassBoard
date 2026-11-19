@@ -2,7 +2,8 @@
    - 메뉴 없이 16:9 칠판만 화면에 꽉 차게 보여 줍니다. 읽기만 하고, 쓰지 않습니다.
    - 태블릿이 지금 보는 쪽의 배경·선과 확대 상태를 따라갑니다.
    - 화면을 한 번 누르면 전체화면이 됩니다(브라우저 규칙상 클릭이 필요합니다).
-   - 구석에 연결 상태를 잠깐 보여 주고 숨깁니다. */
+   - 구석에 연결 상태를 잠깐 보여 주고 숨깁니다.
+   - 공유가 꺼졌거나 수업이 끝났거나 방이 없으면 빈 칠판 위에 안내를 보입니다. */
 
 import './view.css';
 import { initializeApp } from 'firebase/app';
@@ -188,27 +189,48 @@ if (!ROOM_RE.test(code)) {
     laser.end();
   });
 
-  onValue(ref(db, `${base}/state`), (snap) => {
-    const st = snap.val();
+  /* 가운데 안내: 방이 있는지(meta)와 태블릿 상태(state)를 함께 보고 정합니다. */
+  let roomExists = null;   // 아직 모르면 null
+  let st = null;
+  let blank = false;
+
+  function clearBoard() {
+    if (blank) return;
+    blank = true;
+    // 지난 판서가 안내 뒤에 남아 보이지 않게 빈 칠판으로 둡니다
+    followPage(null);
+    bgKey = '';
+    board.setBackground({ type: 'chalk' });
+    board.compose();
+  }
+
+  function render() {
+    if (roomExists === false) {
+      notice('이 보기 주소의 수업 방이 없습니다.<small>태블릿에서 수업 방을 다시 만들었다면, 서랍의 공유 → 보기 주소 복사로 새 주소를 받아 엽니다.</small>');
+      clearBoard();
+      return;
+    }
     if (!st) {
       notice('태블릿에서 PC 공유를 켜면 판서가 여기에 나타납니다.');
-      followPage(null);
+      clearBoard();
       return;
     }
     if (st.sharing === false) {
-      // 지난 판서가 안내 뒤에 남아 보이지 않게 빈 칠판으로 둡니다
-      notice('PC 공유가 꺼져 있습니다.<small>태블릿 서랍의 공유에서 PC 공유를 켭니다.</small>');
-      followPage(null);
-      bgKey = '';
-      board.setBackground({ type: 'chalk' });
-      board.compose();
+      notice(st.ended
+        ? '수업이 끝났습니다.<small>다음 수업에서 태블릿이 PC 공유를 켜면 판서가 여기에 나타납니다.</small>'
+        : 'PC 공유가 꺼져 있습니다.<small>태블릿 서랍의 공유에서 PC 공유를 켭니다.</small>');
+      clearBoard();
       return;
     }
     notice('');
+    blank = false;
     const v = st.view || { z: 1, x: 0, y: 0 };
     const sameView = v.z === board.view.z && v.x === board.view.x && v.y === board.view.y;
     if (!sameView) board.setView(v);
     if (st.pageId !== pageId) followPage(st.pageId);
     else redrawSoon();
-  });
+  }
+
+  onValue(ref(db, `${base}/meta/owner`), (snap) => { roomExists = snap.exists(); render(); });
+  onValue(ref(db, `${base}/state`), (snap) => { st = snap.val(); render(); });
 }

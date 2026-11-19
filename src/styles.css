@@ -358,6 +358,7 @@ button { font: inherit; color: inherit; }
 }
 .modal h2 { margin: 0 0 8px; font-size: 19px; }
 .modal p { margin: 0 0 12px; color: var(--muted); line-height: 1.55; }
+.modal p.view-url { color: inherit; font-family: ui-monospace, monospace; font-size: 14px; word-break: break-all; user-select: all; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .btn {
   min-height: 44px;
