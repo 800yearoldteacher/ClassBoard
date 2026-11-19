@@ -12,6 +12,7 @@ const PATHS = {
   next: '<path d="M9 5l7 7-7 7"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   fullscreen: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  fullscreenExit: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
 };
 

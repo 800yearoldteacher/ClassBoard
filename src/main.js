@@ -377,6 +377,36 @@ async function pickBackground() {
   toast(`배경을 ${bgName(state.page.bg)}으로 바꿨습니다.`);   // 다섯 이름 모두 받침으로 끝나 '으로'를 씁니다
 }
 
+/* ---------- 전체화면 ----------
+   브라우저 주소창과 상태 표시줄을 숨깁니다. 태블릿 설치 앱은 처음부터 전체화면이라 주로 교실 PC·전자칠판에서 씁니다. */
+function isFullscreen() { return !!document.fullscreenElement; }
+
+function showFullscreenButton() {
+  const b = document.getElementById('page-fullscreen');
+  const on = isFullscreen();
+  b.innerHTML = icon(on ? 'fullscreenExit' : 'fullscreen');
+  b.title = on ? '전체화면 끝내기' : '전체화면';
+  b.setAttribute('aria-label', b.title);
+}
+
+async function toggleFullscreen() {
+  try {
+    if (isFullscreen()) {
+      await document.exitFullscreen();
+    } else if (window.matchMedia('(display-mode: fullscreen)').matches) {
+      toast('설치한 앱은 이미 전체화면입니다.');
+    } else if (document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    } else {
+      toast('이 브라우저에서는 전체화면을 쓸 수 없습니다.');
+    }
+  } catch (e) {
+    console.error(e);
+    toast('전체화면으로 바꾸지 못했습니다.');
+  }
+}
+document.addEventListener('fullscreenchange', showFullscreenButton);
+
 /* ---------- 쪽 관리 창 ---------- */
 const THUMB_W = 320, THUMB_H = 180;
 
@@ -572,6 +602,7 @@ buildPagebar(document.getElementById('pagebar'), {
   'page-prev': () => goPage(-1),
   'page-next': () => goPage(1),
   'page-add': addPage,
+  'page-fullscreen': toggleFullscreen,
 });
 let lastLayout = null;
 const drawer = buildDrawer({
