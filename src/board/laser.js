@@ -27,8 +27,9 @@ export class Laser {
     this.kick();
   }
 
-  begin(pt) { this.down = true; this.add(pt); }
-  add(pt) { this.trail.push({ x: pt[0], y: pt[1], t: performance.now() }); this.kick(); }
+  /* 새로 펜을 댄 점에는 start 표시를 붙여, 이전 획의 잔상 끝과 잇지 않습니다. */
+  begin(pt) { this.down = true; this.add(pt, true); }
+  add(pt, start = false) { this.trail.push({ x: pt[0], y: pt[1], t: performance.now(), start }); this.kick(); }
   end() { this.down = false; this.kick(); }
   clear() { this.trail = []; this.down = false; this.kick(); }
 
@@ -55,7 +56,10 @@ export class Laser {
       if (a <= 0) continue;
       ctx.beginPath();
       ctx.moveTo(tr[i].x * W, tr[i].y * H);
-      for (let k = i + 1; k <= end; k++) ctx.lineTo(tr[k].x * W, tr[k].y * H);
+      for (let k = i + 1; k <= end; k++) {
+        if (tr[k].start) ctx.moveTo(tr[k].x * W, tr[k].y * H);   // 새 획이 시작되는 곳에서는 선을 끊습니다
+        else ctx.lineTo(tr[k].x * W, tr[k].y * H);
+      }
       ctx.strokeStyle = `rgba(255, 40, 40, ${0.28 * a})`;
       ctx.lineWidth = glow;
       ctx.stroke();
