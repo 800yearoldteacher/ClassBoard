@@ -34,7 +34,7 @@ const DISPLAY_MODES = [
   ['browser', '브라우저'],
 ];
 
-export function buildDrawer() {
+export function buildDrawer({ onOpen = () => {} } = {}) {
   const drawer = document.getElementById('drawer');
   const backdrop = document.getElementById('backdrop');
 
@@ -62,6 +62,7 @@ export function buildDrawer() {
   drawer.append(info);
 
   function open(side) {
+    onOpen();
     drawer.classList.toggle('from-right', side === 'right');
     drawer.classList.add('open');
     drawer.setAttribute('aria-hidden', 'false');
@@ -83,7 +84,8 @@ export function buildDrawer() {
   head.querySelector('button').addEventListener('click', close);
 
   return {
-    updateInfo(layout, board) {
+    updateInfo(layout, board, stats) {
+      if (!layout) return;
       const mode = DISPLAY_MODES.find(([m]) => window.matchMedia(`(display-mode: ${m})`).matches);
       const dpr = window.devicePixelRatio || 1;
       const rows = [
@@ -93,6 +95,9 @@ export function buildDrawer() {
         ['아래 띠', `${layout.bottom}px`],
         ['표시 방식', mode ? mode[1] : '알 수 없음'],
         ['저지연 화면', board.lowLatency ? '적용됨(불투명)' : '적용 안 됨'],
+        ['펜 처리 시간', stats && stats.lastEvents
+          ? `움직일 때 평균 ${stats.lastAvg.toFixed(2)}ms · 최대 ${stats.lastMax.toFixed(1)}ms · 뗄 때 ${(stats.commitMs || 0).toFixed(1)}ms (마지막 선, ${stats.lastEvents}회)`
+          : '아직 없음(선을 하나 그은 뒤 다시 엽니다)'],
         ['판', `${__APP_VERSION__} · ${new Date(__BUILD_TIME__).toLocaleString('ko-KR')}`],
       ];
       const dl = document.getElementById('screen-info');

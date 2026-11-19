@@ -24,6 +24,32 @@ export const SIZES = [
 
 const HL_SCALE = 3;   // 형광펜은 같은 굵기 단계에서 세 배 굵게 그립니다
 
+/* ---------- 그리는 중 미리보기 ----------
+   펜이 움직일 때마다 선 전체 모양을 다시 계산하면 태블릿에서 처리가 밀려 선이 늦게 나왔습니다(1-2 시험).
+   그리는 동안에는 새로 들어온 짧은 조각만 둥근 선으로 덧그리고, 펜을 떼면 완성 모양으로 바꿉니다.
+   조각 굵기는 perfect-freehand의 굵기 계산과 같게 맞춥니다. */
+export function previewWidth(st, p, W) {
+  const size = st.w * W;
+  if (st.tool === 'hl') return Math.max(1, size * HL_SCALE);
+  const thinning = st.sim ? 0.45 : 0.6;
+  return Math.max(1, size * (1 - 2 * thinning * (0.5 - p)));
+}
+
+/* 반투명 형광색은 조각이 겹치는 곳마다 진해지므로, 미리보기는 칠판 바탕에 섞은 불투명한 색으로 그립니다. */
+export function previewColor(st, bgHex) {
+  if (st.tool !== 'hl') return st.color;
+  const m = /rgba?\(([^)]+)\)/.exec(st.color);
+  if (!m) return st.color;
+  const [r, g, b, a = 1] = m[1].split(',').map((v) => parseFloat(v));
+  const bg = parseInt(bgHex.slice(1), 16);
+  const mix = (c, bc) => Math.round(c * a + bc * (1 - a));
+  return `rgb(${mix(r, (bg >> 16) & 255)}, ${mix(g, (bg >> 8) & 255)}, ${mix(b, bg & 255)})`;
+}
+
+export function strokeBounds(s, W, H) {
+  return bounds(outline(s.pts, s, W, H, true));
+}
+
 /* 선 테두리 점 목록(칠판 화면 크기 W×H 기준) */
 export function outline(pts, st, W, H, last) {
   const size = Math.max(1, st.w * W * (st.tool === 'hl' ? HL_SCALE : 1));

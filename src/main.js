@@ -2,7 +2,7 @@ import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
 import { computeLayout } from './layout.js';
 import { BoardCanvas } from './board/canvas.js';
-import { COLORS, SIZES, paintStroke, redrawInk, toRecord } from './board/ink.js';
+import { COLORS, SIZES, paintStroke, redrawInk, toRecord, strokeBounds, union } from './board/ink.js';
 import { attachInput } from './board/input.js';
 import * as store from './store.js';
 import { loadPrefs, savePrefs } from './prefs.js';
@@ -87,12 +87,13 @@ buildToolbar(document.getElementById('tools'), {
   'tool-color': pickColor,
 });
 buildPagebar(document.getElementById('pagebar'));
-const drawer = buildDrawer();
+let lastLayout = null;
+const drawer = buildDrawer({ onOpen: () => drawer.updateInfo(lastLayout, board, input.stats) });
 showColorOnButton();
 showSizeOnButton();
 
 /* ---------- 선 긋기와 저장 ---------- */
-attachInput({
+const input = attachInput({
   host: boardEl,
   board,
   getStyle: styleFor,
@@ -100,14 +101,17 @@ attachInput({
   canFingerDraw: () => false,   // 손가락으로도 쓰기 설정은 1-4 묶음에서 만듭니다
   onCommit(st, box) {
     if (!state.page) { board.restoreRegion(box); return; }   // 아직 불러오는 중
+    const t0 = performance.now();
     const s = { id: crypto.randomUUID(), pageId: state.page.id, seq: ++state.seq, ...st };
     state.strokes.push(s);
     if (s.tool === 'hl') {
       board.redrawAll();   // 형광 선은 글씨 아래에 깔리도록 판서층을 다시 그립니다
     } else {
+      // 판서층에 완성 모양을 그리고, 미리보기 조각이 있던 구역만 바꿔 보입니다
       paintStroke(board.inkCtx, s, board.w, board.h);
-      board.compose();
+      board.restoreRegion(union(box, strokeBounds(s, board.w, board.h)));
     }
+    input.stats.commitMs = performance.now() - t0;
     store.putStroke(toRecord(s)).catch((e) => {
       console.error(e);
       toast('선을 저장하지 못했습니다. 저장 공간을 확인합니다.', { duration: 6000 });
@@ -134,7 +138,8 @@ function applyLayout() {
     s.setProperty('--btn', `${Math.max(36, Math.min(52, Math.min(layout.top, layout.bottom) - 10))}px`);
     board.resize(layout.bw, layout.bh, dpr);
   }
-  drawer.updateInfo(layout, board);
+  lastLayout = layout;
+  drawer.updateInfo(layout, board, input.stats);
 }
 
 let pending = 0;
