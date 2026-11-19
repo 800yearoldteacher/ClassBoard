@@ -67,6 +67,26 @@ export function getLesson(id) { return get('lessons', id); }
 export function putLesson(lesson) { return put('lessons', lesson); }
 export function getPage(id) { return get('pages', id); }
 
+export async function listLessons() {
+  const db = await open();
+  const rows = await result(db.transaction('lessons').objectStore('lessons').getAll());
+  return rows.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/* 수업의 index 자리에 새 쪽을 넣습니다(쪽 순서와 쪽을 한 번에 저장). */
+export async function insertPage(lesson, index, bg) {
+  const page = { id: crypto.randomUUID(), lessonId: lesson.id, bg: { ...bg } };
+  const pageIds = lesson.pageIds.slice();
+  pageIds.splice(index, 0, page.id);
+  const next = { ...lesson, pageIds, updatedAt: Date.now() };
+  const db = await open();
+  const tx = db.transaction(['lessons', 'pages'], 'readwrite');
+  tx.objectStore('pages').put(page);
+  tx.objectStore('lessons').put(next);
+  await done(tx);
+  return { lesson: next, page };
+}
+
 /* 새 수업과 첫 쪽을 한 번에 만듭니다. */
 export async function createLesson(title) {
   const now = Date.now();

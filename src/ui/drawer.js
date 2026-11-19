@@ -1,31 +1,9 @@
 /* 보조 메뉴 서랍
-   왼쪽·오른쪽 손잡이 어느 쪽을 눌러도 같은 서랍이 그쪽에서 열립니다. */
+   왼쪽·오른쪽 손잡이 어느 쪽을 눌러도 같은 서랍이 그쪽에서 열립니다.
+   sections: [{ title, intro?: () => 글, items: [{ label, later?, onClick?, toggle?: () => 켬 여부 }] }] */
 
 import { icon } from './icons.js';
 import { laterToast } from './toast.js';
-
-const SECTIONS = [
-  { title: '자료', items: [
-    { label: 'PDF 열기', later: 's3' },
-    { label: '이미지 불러오기', later: 's3' },
-    { label: '카메라 촬영', later: 's3' },
-    { label: '배경 바꾸기', later: 's2' },
-  ] },
-  { title: '공유', items: [
-    { label: 'PC 공유 켜기', later: 's4' },
-  ] },
-  { title: '수업', items: [
-    { label: '새 수업', later: 'next' },
-    { label: '수업 열기', later: 'next' },
-    { label: '이 쪽 모두 지우기', later: 'next' },
-    { label: '수업 종료', later: 's4' },
-  ] },
-  { title: '설정', items: [
-    { label: '잠금 번호', later: 'next' },
-    { label: '손가락으로도 쓰기', later: 'next' },
-    { label: '지운 뒤 펜 복귀', later: 'next' },
-  ] },
-];
 
 const DISPLAY_MODES = [
   ['fullscreen', '전체화면 앱'],
@@ -34,24 +12,47 @@ const DISPLAY_MODES = [
   ['browser', '브라우저'],
 ];
 
-export function buildDrawer({ onOpen = () => {} } = {}) {
+export function buildDrawer({ sections, onOpen = () => {}, onClose = () => {} }) {
   const drawer = document.getElementById('drawer');
   const backdrop = document.getElementById('backdrop');
+  const refreshers = [];
 
   const head = document.createElement('div');
   head.className = 'drawer-head';
   head.innerHTML = `<strong>보조 메뉴</strong><button type="button" class="tool small" aria-label="닫기" title="닫기">${icon('close')}</button>`;
   drawer.append(head);
 
-  for (const sec of SECTIONS) {
+  for (const sec of sections) {
     const box = document.createElement('section');
-    box.innerHTML = `<h2>${sec.title}</h2>`;
+    const h = document.createElement('h2');
+    h.textContent = sec.title;
+    box.append(h);
+    if (sec.intro) {
+      const p = document.createElement('p');
+      p.className = 'lesson-now';
+      box.append(p);
+      refreshers.push(() => { p.innerHTML = sec.intro(); });
+    }
     for (const it of sec.items) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'menu-item';
-      b.textContent = it.label;
-      b.addEventListener('click', () => laterToast(it.later));
+      const label = document.createElement('span');
+      label.textContent = it.label;
+      b.append(label);
+      if (it.toggle) {
+        const st = document.createElement('span');
+        st.className = 'state';
+        b.append(st);
+        refreshers.push(() => {
+          const on = !!it.toggle();
+          st.textContent = on ? '켬' : '끔';
+          st.classList.toggle('on', on);
+        });
+      }
+      b.addEventListener('click', async () => {
+        if (it.onClick) { await it.onClick(); refresh(); } else laterToast(it.later);
+      });
       box.append(b);
     }
     drawer.append(box);
@@ -61,17 +62,22 @@ export function buildDrawer({ onOpen = () => {} } = {}) {
   info.innerHTML = '<h2>화면 정보</h2><dl id="screen-info"></dl>';
   drawer.append(info);
 
+  function refresh() { for (const r of refreshers) r(); }
+
   function open(side) {
     onOpen();
+    refresh();
     drawer.classList.toggle('from-right', side === 'right');
     drawer.classList.add('open');
     drawer.setAttribute('aria-hidden', 'false');
     backdrop.hidden = false;
   }
   function close() {
+    if (!drawer.classList.contains('open')) return;
     drawer.classList.remove('open');
     drawer.setAttribute('aria-hidden', 'true');
     backdrop.hidden = true;
+    onClose();
   }
 
   const left = document.getElementById('handle-left');
@@ -84,6 +90,8 @@ export function buildDrawer({ onOpen = () => {} } = {}) {
   head.querySelector('button').addEventListener('click', close);
 
   return {
+    close,
+    refresh,
     updateInfo(layout, board, stats) {
       if (!layout) return;
       const mode = DISPLAY_MODES.find(([m]) => window.matchMedia(`(display-mode: ${m})`).matches);
