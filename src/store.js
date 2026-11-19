@@ -73,6 +73,31 @@ export async function listLessons() {
   return rows.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+/* 쪽 순서를 바꿔 저장합니다. */
+export async function setPageOrder(lesson, pageIds) {
+  const next = { ...lesson, pageIds: pageIds.slice(), updatedAt: Date.now() };
+  await putLesson(next);
+  return next;
+}
+
+/* 쪽 하나와 그 쪽의 선을 모두 지우고, 수업의 쪽 순서에서도 뺍니다(한 번에 저장). */
+export async function deletePage(lesson, pageId) {
+  const next = { ...lesson, pageIds: lesson.pageIds.filter((id) => id !== pageId), updatedAt: Date.now() };
+  const db = await open();
+  const tx = db.transaction(['lessons', 'pages', 'strokes'], 'readwrite');
+  tx.objectStore('lessons').put(next);
+  tx.objectStore('pages').delete(pageId);
+  const idx = tx.objectStore('strokes').index('pageId');
+  idx.openKeyCursor(IDBKeyRange.only(pageId)).onsuccess = (e) => {
+    const cur = e.target.result;
+    if (!cur) return;
+    tx.objectStore('strokes').delete(cur.primaryKey);
+    cur.continue();
+  };
+  await done(tx);
+  return next;
+}
+
 /* 수업의 index 자리에 새 쪽을 넣습니다(쪽 순서와 쪽을 한 번에 저장). */
 export async function insertPage(lesson, index, bg) {
   const page = { id: crypto.randomUUID(), lessonId: lesson.id, bg: { ...bg } };

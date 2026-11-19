@@ -36,6 +36,8 @@ export class History {
     return a;
   }
 
+  forget(pageId) { this.pages.delete(pageId); }   // 쪽을 지웠을 때
+
   canUndo(pageId) { return this.stack(pageId).undo.length > 0; }
   canRedo(pageId) { return this.stack(pageId).redo.length > 0; }
 }

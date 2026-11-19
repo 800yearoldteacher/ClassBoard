@@ -17,6 +17,8 @@ import { openPopover, closePopover } from './ui/popover.js';
 import { toast } from './ui/toast.js';
 import { openModal, confirmModal, textModal, pinModal, listModal } from './ui/modal.js';
 import { hashPin } from './lock.js';
+import { openPageManager } from './ui/pages.js';
+import { BACKGROUNDS } from './board/canvas.js';
 
 /* ---------- 상태 ---------- */
 const prefs = loadPrefs();
@@ -317,6 +319,68 @@ function addPage() {
   });
 }
 
+/* ---------- 쪽 관리 창 ---------- */
+const THUMB_W = 320, THUMB_H = 180;
+
+async function drawThumb(pageId, canvas) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = THUMB_W * dpr;
+  canvas.height = THUMB_H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const isCurrent = state.page && pageId === state.page.id;
+  const page = isCurrent ? state.page : await store.getPage(pageId);
+  // 지금 쪽은 화면용 선 모양 기억(_path)을 건드리지 않도록 복사해서 그립니다
+  const strokes = isCurrent
+    ? state.strokes.map((s) => ({ ...s, _path: null, _key: null }))
+    : await store.getStrokes(pageId);
+  ctx.fillStyle = BACKGROUNDS[(page && page.bg && page.bg.type) || 'chalk'] || BACKGROUNDS.chalk;
+  ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+  for (const s of strokes) if (s.tool === 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
+  for (const s of strokes) if (s.tool !== 'hl') paintStroke(ctx, s, THUMB_W, THUMB_H);
+}
+
+async function removePage(pageId, n) {
+  if (state.lesson.pageIds.length <= 1) return false;
+  const ok = await confirmModal({
+    title: `${n}쪽 지우기`,
+    message: `${n}쪽과 그 쪽의 판서를 지웁니다. 지운 쪽은 되살릴 수 없습니다.`,
+    ok: '쪽 지우기',
+    danger: true,
+  });
+  if (!ok) return false;
+  let removed = false;
+  await guarded(async () => {
+    const idx = state.lesson.pageIds.indexOf(pageId);
+    state.lesson = await store.deletePage(state.lesson, pageId);
+    history.forget(pageId);
+    if (state.page.id === pageId) {
+      await showPage(state.lesson.pageIds[Math.min(idx, state.lesson.pageIds.length - 1)]);
+    } else {
+      updatePageBar();
+    }
+    removed = true;
+  });
+  if (removed) toast(`${n}쪽을 지웠습니다.`);
+  return removed;
+}
+
+function openPages() {
+  if (!state.lesson || input.drawing) return;
+  closePopover();
+  openPageManager({
+    getIds: () => state.lesson.pageIds,
+    getCurrentId: () => state.page && state.page.id,
+    drawThumb,
+    go: (id) => (id === state.page.id ? Promise.resolve() : guarded(() => showPage(id))),
+    reorder: (ids) => guarded(async () => {
+      state.lesson = await store.setPageOrder(state.lesson, ids);
+      updatePageBar();
+    }),
+    remove: removePage,
+  });
+}
+
 /* ---------- 수업 파일 ---------- */
 async function openLesson(id, pageId = null) {
   const lesson = await store.getLesson(id);
@@ -447,6 +511,7 @@ buildToolbar(document.getElementById('tools'), {
   'tool-redo': redo,
 });
 buildPagebar(document.getElementById('pagebar'), {
+  'page-count': openPages,
   'page-prev': () => goPage(-1),
   'page-next': () => goPage(1),
   'page-add': addPage,
