@@ -1,7 +1,7 @@
 /* 이 기기에서만 기억하는 작은 설정(고른 굵기·색깔). 저장이 안 되는 환경이면 기본값을 씁니다. */
 
 const KEY = 'classboard-prefs';
-const DEFAULTS = { sizeIdx: 1, colorIdx: 0 };   // 보통 굵기, 흰색
+const DEFAULTS = { sizeIdx: 1, colorIdx: 0, pressure: true };   // 보통 굵기, 흰색, 필압 반영
 
 export function loadPrefs() {
   try {

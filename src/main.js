@@ -108,7 +108,7 @@ function showColorOnButton() {
   document.getElementById('tool-color').title = `색깔: ${col.name}`;
 }
 function showSizeOnButton() {
-  document.getElementById('tool-width').title = `굵기: ${(SIZES[prefs.sizeIdx] || SIZES[1]).name}`;
+  document.getElementById('tool-width').title = `굵기: ${(SIZES[prefs.sizeIdx] || SIZES[1]).name}${prefs.pressure === false ? ' (필압 끔)' : ''}`;
 }
 
 function pickWidth(btn) {
@@ -125,6 +125,19 @@ function pickWidth(btn) {
       });
       el.append(b);
     });
+    // 필압 반영: 끄면 S펜을 세게 누르든 약하게 누르든 같은 굵기로 씁니다
+    const row = document.createElement('label');
+    row.className = 'pop-check';
+    row.innerHTML = '<input type="checkbox"><span>필압 반영<small>누르는 힘에 따라 굵기가 달라집니다</small></span>';
+    const box = row.querySelector('input');
+    box.checked = prefs.pressure !== false;
+    box.addEventListener('change', () => {
+      prefs.pressure = box.checked;
+      savePrefs(prefs);
+      showSizeOnButton();
+      toast(box.checked ? '필압을 반영합니다.' : '필압을 반영하지 않고 같은 굵기로 씁니다.');
+    });
+    el.append(row);
   });
 }
 
@@ -872,6 +885,7 @@ const input = attachInput({
   onErase: eraseLasso,
   select: selectHooks,
   isGesturing: () => !!(viewCtl && viewCtl.active),
+  usePressure: () => prefs.pressure !== false,
   onDown: closePopover,
   canFingerDraw: () => settings.fingerDraw,
   onCommit(st, box) {

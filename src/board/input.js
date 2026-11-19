@@ -16,7 +16,7 @@ import { baseColor } from './backgrounds.js';
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
-export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw, select, isGesturing = () => false }) {
+export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw, select, isGesturing = () => false, usePressure = () => true }) {
   let penSeen = false;
   let active = null;
   let rect = null;
@@ -31,8 +31,9 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     const fy = (ev.clientY - rect.top) / rect.height;
     const x = Math.min(1, Math.max(0, vx + fx / z));
     const y = Math.min(1, Math.max(0, vy + fy / z));
+    // 필압 반영을 끄면 펜도 늘 0.5로 기록해, 누르는 힘과 상관없이 같은 굵기가 됩니다
     let p = 0.5;
-    if (ev.pointerType === 'pen') p = ev.pressure > 0 ? ev.pressure : 0.2;
+    if (ev.pointerType === 'pen' && usePressure()) p = ev.pressure > 0 ? ev.pressure : 0.2;
     return [r5(x), r5(y), Math.round(p * 1000) / 1000];
   }
 

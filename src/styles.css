@@ -214,6 +214,20 @@ button { font: inherit; color: inherit; }
   border: 2px solid var(--line);
 }
 .pop-swatch .dot.hl { border-radius: 8px; }
+.pop-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pop-check input { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
+.pop-check span { display: grid; gap: 2px; }
+.pop-check small { color: var(--muted); font-size: 12px; }
 .pop-item.sel, .pop-swatch.sel { border-color: #3b5568; background: #23303a; color: var(--accent); }
 .pop-item:active, .pop-swatch:active { background: #2a323b; }
 

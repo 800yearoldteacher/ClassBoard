@@ -148,6 +148,32 @@ export async function bitmapFor(bg, size = null) {
   }
 }
 
+/* ---------- 수업 방에 올릴 배경 그림 ----------
+   원본 파일은 올리지 않고, 화면용으로 줄인 그림(긴 변 1920px JPEG)만 data URL로 만들어 올립니다. */
+const ROOM_SIDE = 1920;
+const roomPics = new Map();   // 키 → Promise<data URL>
+
+export function roomPicture(bg) {
+  if (!bg || !bg.assetId || (bg.type !== 'image' && bg.type !== 'pdf')) return Promise.resolve(null);
+  const key = bg.type === 'pdf' ? `${bg.assetId}:${bg.pdfPage}` : bg.assetId;
+  if (!roomPics.has(key)) {
+    const p = (async () => {
+      const bmp = await bitmapFor(bg, { w: ROOM_SIDE, h: Math.round((ROOM_SIDE * 9) / 16) });
+      if (!bmp) return null;
+      const s = Math.min(1, ROOM_SIDE / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bmp.width * s));
+      c.height = Math.max(1, Math.round(bmp.height * s));
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.8);
+    })();
+    p.catch(() => roomPics.delete(key));
+    roomPics.set(key, p);
+    while (roomPics.size > 20) roomPics.delete(roomPics.keys().next().value);
+  }
+  return roomPics.get(key);
+}
+
 /* 쪽을 넘길 때 끊기지 않도록 미리 그려 둡니다(실패해도 조용히 넘어갑니다). */
 export function prefetch(bg, size) {
   if (!bg || bg.type !== 'pdf') return;

@@ -9,6 +9,7 @@
    Firebase 부품은 공유를 켤 때만 불러옵니다(평소 앱이 열리는 속도와 오프라인 사용에 영향 없음). */
 
 import { firebaseConfig, ROOM_RE, strokeToRoom } from './room.js';
+import { roomPicture } from './media.js';
 
 let fb = null;            // 불러온 Firebase 함수와 db
 let room = null;          // 방 코드
@@ -100,6 +101,17 @@ function bgToRoom(bg) {
 
 function write(promise) { promise.catch((e) => { console.error(e); error = String(e && e.code || e); emit(); }); }
 
+/* 사진·PDF 쪽이면 화면용으로 줄인 배경 그림을 만들어 그 쪽의 bg.img로 올립니다(만드는 동안 PC에는 칠판색이 보입니다). */
+async function attachPicture(page) {
+  try {
+    const img = await roomPicture(page.bg);
+    if (!img || !enabled || !uploaded.has(page.id)) return;
+    await fb.update(R(`pages/${page.id}/bg`), { img });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 /* 쪽을 보여 줄 때: 이번 공유에서 처음 보는 쪽이면 배경과 선을 통째로 올리고, 지금 쪽 정보를 바꿉니다. */
 export function showPage(page, strokes, view) {
   if (!enabled) return;
@@ -108,6 +120,7 @@ export function showPage(page, strokes, view) {
     for (const s of strokes) map[s.id] = strokeToRoom(s);
     write(fb.set(R(`pages/${page.id}`), { bg: bgToRoom(page.bg), strokes: map }));
     uploaded.add(page.id);
+    attachPicture(page);
   }
   write(fb.update(R('state'), { sharing: true, pageId: page.id, bg: bgToRoom(page.bg), view: { ...view }, at: fb.serverTimestamp() }));
 }
@@ -115,6 +128,7 @@ export function showPage(page, strokes, view) {
 export function setBackground(page) {
   if (!enabled || !uploaded.has(page.id)) return;
   write(fb.update(R(''), { [`pages/${page.id}/bg`]: bgToRoom(page.bg), 'state/bg': bgToRoom(page.bg) }));
+  attachPicture(page);
 }
 
 /* 선 넣기·바꾸기(옮기기)·빼기. 아직 통째로 올리지 않은 쪽이면 건너뜁니다(보여 줄 때 함께 올라갑니다). */

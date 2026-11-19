@@ -81,6 +81,26 @@ if (!ROOM_RE.test(code)) {
   let pageId = null;
   let offPage = [];
 
+  /* 쪽 배경: 사진·PDF 쪽은 태블릿이 올린 그림(bg.img)을 풀어 그립니다. 그림이 오기 전에는 칠판색입니다. */
+  let bgKey = '';
+  async function applyBackground(id, bg) {
+    const key = `${id}|${bg.type}|${bg.img ? bg.img.length : 0}`;
+    if (key === bgKey) return;
+    bgKey = key;
+    let pic = null;
+    if (bg.img) {
+      try {
+        const im = new Image();
+        im.src = bg.img;
+        await im.decode();
+        pic = await createImageBitmap(im);
+      } catch (e) { console.error(e); }
+    }
+    if (pageId !== id || bgKey !== key) return;   // 그사이 쪽이 바뀌었으면 버립니다
+    board.setBackground({ type: bg.type }, pic);
+    board.compose();
+  }
+
   function followPage(id) {
     for (const off of offPage) off();
     offPage = [];
@@ -88,13 +108,13 @@ if (!ROOM_RE.test(code)) {
     redrawSoon();
     pageId = id;
     if (!id) return;
+    offPage.push(onValue(ref(db, `${base}/pages/${id}/bg`), (s) => applyBackground(id, s.val() || { type: 'chalk' })));
     const sref = ref(db, `${base}/pages/${id}/strokes`);
     offPage.push(onChildAdded(sref, (s) => { strokes.set(s.key, strokeFromRoom(s.key, s.val())); redrawSoon(); }));
     offPage.push(onChildChanged(sref, (s) => { strokes.set(s.key, strokeFromRoom(s.key, s.val())); redrawSoon(); }));
     offPage.push(onChildRemoved(sref, (s) => { strokes.delete(s.key); redrawSoon(); }));
   }
 
-  let bgKey = '';
   onValue(ref(db, `${base}/state`), (snap) => {
     const st = snap.val();
     if (!st) {
@@ -112,9 +132,6 @@ if (!ROOM_RE.test(code)) {
       return;
     }
     notice('');
-    const bg = st.bg || { type: 'chalk' };
-    const key = JSON.stringify(bg);
-    if (key !== bgKey) { bgKey = key; board.setBackground(bg); }
     const v = st.view || { z: 1, x: 0, y: 0 };
     const sameView = v.z === board.view.z && v.x === board.view.x && v.y === board.view.y;
     if (!sameView) board.setView(v);
