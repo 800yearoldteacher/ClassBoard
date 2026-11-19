@@ -1,7 +1,7 @@
 /* 태블릿 → 수업 방 올리기
    수업 방(rooms/{방코드}) 구조
    - meta                       { owner: uid, createdAt }      방 주인(보안 규칙이 이 uid만 쓰게 합니다)
-   - state                      { sharing, ended?, pageId, bg, view, at } 지금 태블릿이 보는 쪽과 확대 상태(ended: 수업 종료)
+   - state                      { sharing, pageId, bg, view, at } 지금 태블릿이 보는 쪽과 확대 상태
    - pages/{pageId}/bg          { type, img? }                 쪽 배경(사진·PDF 쪽은 화면용 그림 img)
    - pages/{pageId}/strokes/{id}  선 한 줄(점 목록은 짧은 글자로 줄임, room.js)
    - live/{id}, laser/{id}      그리는 중인 선, 레이저 잔상(4-2)
@@ -99,7 +99,7 @@ export async function enable(savedCode) {
   return enabled ? room : null;
 }
 
-/* 공유 끄기: PC 화면에 '공유가 꺼져 있습니다'를 보이게 합니다. 자료는 수업 종료 때 지웁니다. */
+/* 공유 끄기: PC 화면에 '공유가 꺼져 있습니다'를 보이게 합니다. 올린 자료는 다음에 공유를 켤 때 비웁니다. */
 export function disable() {
   relayEnd();
   if (fb && room) fb.update(R('state'), { sharing: false, at: fb.serverTimestamp() }).catch(() => {});
@@ -223,37 +223,12 @@ export function removePage(pageId) {
   write(fb.remove(R(`pages/${pageId}`)));
 }
 
-/* ---------- 수업 종료와 수업 방 다시 만들기 ---------- */
+/* ---------- 수업 방 다시 만들기 ---------- */
 
 /* 이 기기가 주인인 방이면 true(주인이 아니면 쓸 수도 없고 지울 것도 없습니다) */
 async function ownsRoom(code) {
   if (!code || !ROOM_RE.test(code)) return false;
   return (await timeout(fb.get(fb.ref(fb.db, `rooms/${code}/meta/owner`)))).val() === fb.uid;
-}
-
-/* 수업 종료: 공유를 끄고, 수업 방에 올린 쪽·긋고 있는 선·레이저를 지웁니다.
-   방 코드(meta)는 남겨 보기 주소를 그대로 쓰고, PC에는 '수업이 끝났습니다'를 보입니다.
-   지웠거나 지울 것이 없으면 true, 인터넷 문제로 지우지 못했으면 false를 돌려줍니다. */
-export async function endRoom(savedCode) {
-  const code = room || savedCode;
-  relayEnd();
-  enabled = false;
-  uploaded.clear();
-  emit();
-  if (!code || !ROOM_RE.test(code)) return true;
-  try {
-    await timeout(load(), 15000);
-    if (!(await ownsRoom(code))) return true;
-    if (enabled) return true;   // 그사이 공유를 다시 켰으면 켤 때 이미 비웠습니다
-    await timeout(fb.update(fb.ref(fb.db, `rooms/${code}`), {
-      pages: null, live: null, laser: null,
-      state: { sharing: false, ended: true, at: fb.serverTimestamp() },
-    }));
-    return true;
-  } catch (e) {
-    console.error(e);
-    return false;
-  }
 }
 
 /* 수업 방 다시 만들기: 이 기기가 주인인 옛 방을 통째로 지우고 새 방 코드를 만듭니다.

@@ -3,7 +3,7 @@
    - 태블릿이 지금 보는 쪽의 배경·선과 확대 상태를 따라갑니다.
    - 화면을 한 번 누르면 전체화면이 됩니다(브라우저 규칙상 클릭이 필요합니다).
    - 구석에 연결 상태를 잠깐 보여 주고 숨깁니다.
-   - 공유가 꺼졌거나 수업이 끝났거나 방이 없으면 빈 칠판 위에 안내를 보입니다. */
+   - 공유가 꺼졌거나 방이 없으면 빈 칠판 위에 안내를 보입니다. */
 
 import './view.css';
 import { initializeApp } from 'firebase/app';
@@ -216,9 +216,7 @@ if (!ROOM_RE.test(code)) {
       return;
     }
     if (st.sharing === false) {
-      notice(st.ended
-        ? '수업이 끝났습니다.<small>다음 수업에서 태블릿이 PC 공유를 켜면 판서가 여기에 나타납니다.</small>'
-        : 'PC 공유가 꺼져 있습니다.<small>태블릿 서랍의 공유에서 PC 공유를 켭니다.</small>');
+      notice('PC 공유가 꺼져 있습니다.<small>태블릿 서랍의 공유에서 PC 공유를 켭니다.</small>');
       clearBoard();
       return;
     }
