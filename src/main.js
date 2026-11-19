@@ -4,7 +4,11 @@ import { computeLayout } from './layout.js';
 import { BoardCanvas } from './board/canvas.js';
 import { COLORS, SIZES, paintStroke, redrawInk, toRecord, strokeBounds, union } from './board/ink.js';
 import { attachInput } from './board/input.js';
+import { strokesInLasso } from './board/lasso.js';
+import { Laser } from './board/laser.js';
+import { History } from './history.js';
 import * as store from './store.js';
+import { icon } from './ui/icons.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 import { buildToolbar, buildPagebar } from './ui/toolbar.js';
 import { buildDrawer } from './ui/drawer.js';
@@ -24,6 +28,35 @@ const state = {
 const boardEl = document.getElementById('board');
 const board = new BoardCanvas(boardEl);
 board.onRedrawInk = (ctx, w, h) => redrawInk(ctx, state.strokes, w, h);
+const laser = new Laser(boardEl);
+const history = new History();
+
+/* ---------- 도구 ----------
+   current: 지금 도구('pen' | 'eraser' | 'laser')
+   last:    펜/지우개 버튼이 마지막으로 가리킨 도구. 레이저에서 돌아갈 때 씁니다. */
+const tool = { current: 'pen', last: 'pen' };
+const settings = { penAfterErase: true };   // 지운 뒤 펜 복귀(설정 화면은 1-4 묶음에서 만듭니다)
+
+function setTool(t) {
+  tool.current = t;
+  if (t === 'pen' || t === 'eraser') tool.last = t;
+  const penBtn = document.getElementById('tool-pen');
+  penBtn.innerHTML = icon(tool.last === 'eraser' ? 'eraser' : 'pen');
+  penBtn.setAttribute('aria-pressed', String(t !== 'laser'));
+  penBtn.title = `펜/지우개: 지금 ${tool.last === 'eraser' ? '지우개' : '펜'}`;
+  penBtn.classList.toggle('erasing', t === 'eraser');
+  document.getElementById('tool-laser').setAttribute('aria-pressed', String(t === 'laser'));
+  boardEl.classList.toggle('erasing', t === 'eraser');
+}
+
+function togglePen() {
+  if (tool.current === 'laser') setTool(tool.last);   // 레이저에서 누르면 직전 도구로 돌아갑니다
+  else setTool(tool.current === 'pen' ? 'eraser' : 'pen');
+}
+function toggleLaser() {
+  if (tool.current === 'laser') setTool(tool.last);
+  else setTool('laser');
+}
 
 /* ---------- 메뉴 ---------- */
 function styleFor(pointerType) {
@@ -82,21 +115,81 @@ function pickColor(btn) {
   });
 }
 
+/* ---------- 선 넣기·빼기와 되돌리기 ---------- */
+function saveError(e) {
+  console.error(e);
+  toast('판서를 저장하지 못했습니다. 저장 공간을 확인합니다.', { duration: 6000 });
+}
+
+function removeStrokes(list) {
+  const ids = new Set(list.map((s) => s.id));
+  state.strokes = state.strokes.filter((s) => !ids.has(s.id));
+  board.redrawAll();
+  store.deleteStrokes([...ids]).catch(saveError);
+}
+function addStrokes(list) {
+  state.strokes = state.strokes.concat(list).sort((a, b) => a.seq - b.seq);
+  board.redrawAll();
+  store.putStrokes(list.map(toRecord)).catch(saveError);
+}
+
+function updateHistoryButtons() {
+  const pid = state.page && state.page.id;
+  for (const [id, can] of [['tool-undo', pid && history.canUndo(pid)], ['tool-redo', pid && history.canRedo(pid)]]) {
+    const b = document.getElementById(id);
+    b.setAttribute('aria-disabled', String(!can));
+  }
+}
+
+function undo() {
+  if (!state.page) return;
+  const a = history.undo(state.page.id);
+  if (!a) return;
+  if (a.type === 'add') removeStrokes(a.strokes); else if (a.type === 'erase') addStrokes(a.strokes);
+  updateHistoryButtons();
+}
+function redo() {
+  if (!state.page) return;
+  const a = history.redo(state.page.id);
+  if (!a) return;
+  if (a.type === 'add') addStrokes(a.strokes); else if (a.type === 'erase') removeStrokes(a.strokes);
+  updateHistoryButtons();
+}
+
+/* 고리 지우개: 고리 안의 선을 한꺼번에 지웁니다. */
+function eraseLasso(poly, box) {
+  const hit = state.page ? strokesInLasso(state.strokes, poly) : [];
+  if (!hit.length) { board.restoreRegion(box); return; }
+  history.push(state.page.id, { type: 'erase', strokes: hit });
+  removeStrokes(hit);   // 판서층을 다시 그리면서 고리 자국도 함께 지워집니다
+  updateHistoryButtons();
+  if (settings.penAfterErase) setTool('pen');
+}
+
 buildToolbar(document.getElementById('tools'), {
+  'tool-pen': togglePen,
+  'tool-laser': toggleLaser,
   'tool-width': pickWidth,
   'tool-color': pickColor,
+  'tool-undo': undo,
+  'tool-redo': redo,
 });
 buildPagebar(document.getElementById('pagebar'));
 let lastLayout = null;
 const drawer = buildDrawer({ onOpen: () => drawer.updateInfo(lastLayout, board, input.stats) });
 showColorOnButton();
 showSizeOnButton();
+setTool('pen');
+updateHistoryButtons();
 
 /* ---------- 선 긋기와 저장 ---------- */
 const input = attachInput({
   host: boardEl,
   board,
+  laser,
+  getMode: () => (tool.current === 'eraser' ? 'erase' : tool.current === 'laser' ? 'laser' : 'draw'),
   getStyle: styleFor,
+  onErase: eraseLasso,
   onDown: closePopover,
   canFingerDraw: () => false,   // 손가락으로도 쓰기 설정은 1-4 묶음에서 만듭니다
   onCommit(st, box) {
@@ -112,10 +205,9 @@ const input = attachInput({
       board.restoreRegion(union(box, strokeBounds(s, board.w, board.h)));
     }
     input.stats.commitMs = performance.now() - t0;
-    store.putStroke(toRecord(s)).catch((e) => {
-      console.error(e);
-      toast('선을 저장하지 못했습니다. 저장 공간을 확인합니다.', { duration: 6000 });
-    });
+    history.push(state.page.id, { type: 'add', strokes: [s] });
+    updateHistoryButtons();
+    store.putStroke(toRecord(s)).catch(saveError);
   },
 });
 
@@ -137,6 +229,7 @@ function applyLayout() {
     s.setProperty('--bottom', `${layout.bottom}px`);
     s.setProperty('--btn', `${Math.max(36, Math.min(52, Math.min(layout.top, layout.bottom) - 10))}px`);
     board.resize(layout.bw, layout.bh, dpr);
+    laser.resize(layout.bw, layout.bh, dpr);
   }
   lastLayout = layout;
   drawer.updateInfo(layout, board, input.stats);

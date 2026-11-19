@@ -56,6 +56,17 @@ button { font: inherit; color: inherit; }
   height: 100%;
   touch-action: none;
 }
+#board .laser-layer { pointer-events: none; }
+/* 지우개일 때 칠판 테두리를 빨갛게 표시합니다 */
+#board::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px solid transparent;
+  pointer-events: none;
+  transition: border-color .15s;
+}
+#board.erasing::after { border-color: var(--danger); }
 
 /* ---------- 위·아래 띠 ---------- */
 .band {
@@ -91,6 +102,9 @@ button { font: inherit; color: inherit; }
 }
 .tool:active { background: #2a323b; }
 .tool[aria-pressed="true"] { background: #23303a; border-color: #3b5568; color: var(--accent); }
+.tool[aria-pressed="true"].erasing { background: #3a2326; border-color: #6b3b40; color: var(--danger); }
+#tool-laser[aria-pressed="true"] { background: #3a2326; border-color: #6b3b40; color: #ff5a50; }
+.tool[aria-disabled="true"] { opacity: .35; }
 .tool.wide { width: auto; min-width: calc(var(--btn) * 1.6); padding: 0 10px; }
 .tool.small { --btn: 40px; }
 .icon { width: 60%; height: 60%; max-width: 28px; max-height: 28px; }

@@ -3,20 +3,25 @@
    - 손바닥이 펜보다 먼저 닿아 시작된 손가락 선은 펜이 닿는 순간 버립니다.
    - 펜의 필압 0인 점은 버립니다. 펜을 떼는 순간 들어오는 이 점들이 선 끝을 늘입니다(0-A).
    - 예측 그리기는 쓰지 않습니다(기본값 끔).
-   - 그리는 동안에는 새 조각만 덧그리고(빠름), 펜을 떼면 main.js가 완성 모양으로 바꿉니다. */
+   - 그리는 동안에는 새 조각만 덧그리고(빠름), 펜을 떼면 main.js가 완성 모양으로 바꿉니다.
+   모드
+   - draw : 펜 선
+   - erase: 빨간 점선 고리. 펜을 떼면 main.js가 고리 안의 선을 지웁니다.
+   - laser: 레이저 잔상(진행 중 층에는 그리지 않습니다) */
 
 import { previewWidth, previewColor } from './ink.js';
 import { BACKGROUNDS } from './canvas.js';
 
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
+const LASSO_COLOR = '#ff6b6b';
 
-export function attachInput({ host, board, getStyle, onCommit, onDown, canFingerDraw }) {
+export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, canFingerDraw }) {
   let penSeen = false;
   let active = null;
   let rect = null;
 
   /* 처리 시간 기록(화면 정보에 표시). 펜이 움직일 때 한 번 처리하는 데 걸린 시간입니다. */
-  const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0 };
+  const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0, commitMs: 0 };
 
   function toPt(ev) {
     const x = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
@@ -26,40 +31,60 @@ export function attachInput({ host, board, getStyle, onCommit, onDown, canFinger
     return [r5(x), r5(y), Math.round(p * 1000) / 1000];
   }
 
-  /* 새 점까지 짧은 조각 하나를 그립니다. 바뀐 구역(box)도 함께 넓힙니다. */
+  function growBox(a, prev, q, lw) {
+    const W = board.w, H = board.h;
+    const pad = lw / 2 + 3;
+    const x0 = Math.min(prev[0], q[0]) * W - pad, y0 = Math.min(prev[1], q[1]) * H - pad;
+    const x1 = Math.max(prev[0], q[0]) * W + pad, y1 = Math.max(prev[1], q[1]) * H + pad;
+    if (!a.box) { a.box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; return; }
+    const bx = Math.min(a.box.x, x0), by = Math.min(a.box.y, y0);
+    a.box = { x: bx, y: by, w: Math.max(a.box.x + a.box.w, x1) - bx, h: Math.max(a.box.y + a.box.h, y1) - by };
+  }
+
+  /* 새 점까지 짧은 조각 하나를 그립니다. */
   function drawTo(q) {
     const a = active;
     const W = board.w, H = board.h;
     const prev = a.pts.length ? a.pts[a.pts.length - 1] : q;
-    const lw = previewWidth(a.st, (prev[2] + q[2]) / 2, W);
     const ctx = board.liveCtx;
-    ctx.strokeStyle = a.color;
-    ctx.lineWidth = lw;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    let lw;
+    if (a.mode === 'erase') {
+      lw = 2.5;
+      ctx.strokeStyle = LASSO_COLOR;
+      ctx.lineWidth = lw;
+      ctx.setLineDash([8, 7]);
+      ctx.lineDashOffset = -a.len;   // 조각이 이어져도 점선 간격이 끊기지 않게 합니다
+    } else {
+      lw = previewWidth(a.st, (prev[2] + q[2]) / 2, W);
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = lw;
+      ctx.setLineDash([]);
+    }
     ctx.beginPath();
     ctx.moveTo(prev[0] * W, prev[1] * H);
     ctx.lineTo(q[0] * W, q[1] * H);
     ctx.stroke();
-    const pad = lw / 2 + 3;
-    const x0 = Math.min(prev[0], q[0]) * W - pad, y0 = Math.min(prev[1], q[1]) * H - pad;
-    const x1 = Math.max(prev[0], q[0]) * W + pad, y1 = Math.max(prev[1], q[1]) * H + pad;
-    if (!a.box) a.box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-    else {
-      const bx = Math.min(a.box.x, x0), by = Math.min(a.box.y, y0);
-      a.box = { x: bx, y: by, w: Math.max(a.box.x + a.box.w, x1) - bx, h: Math.max(a.box.y + a.box.h, y1) - by };
+    if (a.mode === 'erase') {
+      ctx.setLineDash([]);
+      a.len += Math.hypot((q[0] - prev[0]) * W, (q[1] - prev[1]) * H);
     }
+    growBox(a, prev, q, lw);
     a.pts.push(q);
   }
 
   function addPoint(ev) {
     if (ev.pointerType === 'pen' && ev.pressure === 0) { active.zeros.push(toPt(ev)); return; }
-    drawTo(toPt(ev));
+    const q = toPt(ev);
+    if (active.mode === 'laser') { laser.add(q); active.pts.push(q); return; }
+    drawTo(q);
   }
 
   function cancel() {
     if (!active) return;
-    board.restoreRegion(active.box);
+    if (active.mode === 'laser') laser.end();
+    else board.restoreRegion(active.box);
     active = null;
   }
 
@@ -73,14 +98,21 @@ export function attachInput({ host, board, getStyle, onCommit, onDown, canFinger
     if (e.pointerType === 'touch' && penSeen && !canFingerDraw()) return;
     if (active) return;
     rect = host.getBoundingClientRect();
+    const mode = getMode();
     const st = getStyle(e.pointerType);
     active = {
-      pid: e.pointerId, type: e.pointerType, st,
+      pid: e.pointerId, type: e.pointerType, mode, st,
       color: previewColor(st, BACKGROUNDS[board.background] || BACKGROUNDS.chalk),
-      pts: [], zeros: [], box: null,
+      pts: [], zeros: [], box: null, len: 0,
     };
     stats.count = 0; stats.total = 0; stats.max = 0;
-    addPoint(e);
+    if (mode === 'laser') {
+      const q = toPt(e);
+      active.pts.push(q);
+      laser.begin(q);
+    } else {
+      addPoint(e);
+    }
     try { host.setPointerCapture(e.pointerId); } catch (_) { /* 가짜 입력으로 시험할 때 */ }
     e.preventDefault();
   });
@@ -107,6 +139,8 @@ export function attachInput({ host, board, getStyle, onCommit, onDown, canFinger
       stats.lastMax = stats.max;
       stats.lastEvents = stats.count;
     }
+    if (a.mode === 'laser') { laser.end(); return; }
+    if (a.mode === 'erase') { onErase(a.pts, a.box); return; }
     // 필압을 0으로만 보내는 펜이면 버린 점을 되살려 선이 사라지지 않게 합니다
     if (a.type === 'pen' && a.pts.length <= 2 && a.zeros.length > 3) a.pts = a.pts.concat(a.zeros.map((q) => [q[0], q[1], 0.5]));
     if (!a.pts.length) { board.restoreRegion(a.box); return; }

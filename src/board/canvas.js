@@ -73,7 +73,8 @@ export class BoardCanvas {
     c.width = Math.round(this.w * this.dpr);
     c.height = Math.round(this.h * this.dpr);
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    if (this.live) this.live.replaceWith(c); else this.host.append(c);
+    // 처음에는 맨 앞에 넣어, 레이저 층처럼 나중에 얹는 캔버스가 위에 오게 합니다
+    if (this.live) this.live.replaceWith(c); else this.host.prepend(c);
     this.live = c;
     this.liveCtx = ctx;
     try {

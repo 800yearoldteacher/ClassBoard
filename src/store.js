@@ -89,6 +89,22 @@ export async function getStrokes(pageId) {
 }
 export function putStroke(stroke) { return put('strokes', stroke); }
 
+/* 여러 선을 한 번에 넣거나(되돌리기로 살린 선) 지웁니다(고리 지우개). */
+export async function putStrokes(strokes) {
+  const db = await open();
+  const tx = db.transaction('strokes', 'readwrite');
+  const os = tx.objectStore('strokes');
+  for (const s of strokes) os.put(s);
+  return done(tx);
+}
+export async function deleteStrokes(ids) {
+  const db = await open();
+  const tx = db.transaction('strokes', 'readwrite');
+  const os = tx.objectStore('strokes');
+  for (const id of ids) os.delete(id);
+  return done(tx);
+}
+
 /* 브라우저가 저장 공간이 부족할 때 이 앱의 자료를 지우지 않도록 요청합니다. */
 export async function askPersist() {
   try {
