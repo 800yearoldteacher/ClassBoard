@@ -25,7 +25,7 @@ const PAGES = [
   { id: 'page-fullscreen', label: '전체화면', icon: 'fullscreen', later: 's2' },
 ];
 
-function makeButtons(host, items) {
+function makeButtons(host, items, handlers = {}) {
   for (const it of items) {
     if (it.gap) {
       const g = document.createElement('span');
@@ -41,10 +41,13 @@ function makeButtons(host, items) {
     b.setAttribute('aria-label', it.label);
     if (it.pressed !== undefined) b.setAttribute('aria-pressed', String(!!it.pressed));
     b.innerHTML = it.icon ? icon(it.icon) : it.html || `<span class="count">${it.text}</span>`;
-    if (it.later) b.addEventListener('click', () => laterToast(it.later));
+    const handler = handlers[it.id];
+    if (handler) b.addEventListener('click', () => handler(b));
+    else if (it.later) b.addEventListener('click', () => laterToast(it.later));
     host.append(b);
   }
 }
 
-export function buildToolbar(host) { makeButtons(host, TOOLS); }
-export function buildPagebar(host) { makeButtons(host, PAGES); }
+/* handlers: { 버튼 id: 누를 때 할 일 }. 없으면 '다음에 만듭니다' 안내를 띄웁니다. */
+export function buildToolbar(host, handlers) { makeButtons(host, TOOLS, handlers); }
+export function buildPagebar(host, handlers) { makeButtons(host, PAGES, handlers); }

@@ -26,6 +26,28 @@ export class BoardCanvas {
     this.h = 0;
     this.dpr = 1;
     this.background = 'chalk';
+    this.onRedrawInk = () => {};   // 크기가 바뀌면 판서층을 다시 그리도록 main.js가 채웁니다
+  }
+
+  /* 배경·판서층을 모두 다시 그려 화면에 보입니다(크기 변경, 선 불러오기, 형광 선 추가 때). */
+  redrawAll() {
+    if (!this.w) return;
+    this.onRedrawInk(this.inkCtx, this.w, this.h);
+    this.compose();
+  }
+
+  /* 진행 중 층의 한 구역을 배경·판서층으로 되돌립니다. 그리는 중인 선을 다시 그리기 전에 씁니다. */
+  restoreRegion(box) {
+    if (!this.liveCtx || !box) return;
+    const d = this.dpr;
+    const x0 = Math.max(0, Math.floor(box.x * d));
+    const y0 = Math.max(0, Math.floor(box.y * d));
+    const x1 = Math.min(this.bg.width, Math.ceil((box.x + box.w) * d));
+    const y1 = Math.min(this.bg.height, Math.ceil((box.y + box.h) * d));
+    if (x1 <= x0 || y1 <= y0) return;
+    const sw = x1 - x0, sh = y1 - y0;
+    this.liveCtx.drawImage(this.bg, x0, y0, sw, sh, x0 / d, y0 / d, sw / d, sh / d);
+    this.liveCtx.drawImage(this.ink, x0, y0, sw, sh, x0 / d, y0 / d, sw / d, sh / d);
   }
 
   resize(w, h, dpr) {
@@ -38,7 +60,7 @@ export class BoardCanvas {
     }
     this.createLive();
     this.paintBackground();
-    this.compose();
+    this.redrawAll();
   }
 
   /* 진행 중 층은 크기가 바뀔 때마다, 칠판이 보이는 상태에서 새로 만듭니다. */
