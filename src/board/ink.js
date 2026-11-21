@@ -23,6 +23,9 @@ export const SIZES = [
 ];
 
 const HL_SCALE = 3;   // 형광펜은 같은 굵기 단계에서 세 배 굵게 그립니다
+/* 필압에 따라 가늘어지는 정도. 펜은 0.6에서 0.5로 줄였습니다(0.15.0, 약하게 쓴 곳이 끊겨 보이지 않게).
+   마우스는 필압이 없어 속도로 흉내 내며 0.45를 씁니다. */
+const thinningOf = (st) => (st.tool === 'hl' ? 0 : (st.sim ? 0.45 : 0.5));
 
 /* ---------- 그리는 중 미리보기 ----------
    펜이 움직일 때마다 선 전체 모양을 다시 계산하면 태블릿에서 처리가 밀려 선이 늦게 나왔습니다(1-2 시험).
@@ -31,7 +34,7 @@ const HL_SCALE = 3;   // 형광펜은 같은 굵기 단계에서 세 배 굵게 
 export function previewWidth(st, p, W) {
   const size = st.w * W;
   if (st.tool === 'hl') return Math.max(1, size * HL_SCALE);
-  const thinning = st.sim ? 0.45 : 0.6;
+  const thinning = thinningOf(st);
   return Math.max(1, size * (1 - 2 * thinning * (0.5 - p)));
 }
 
@@ -55,7 +58,7 @@ export function outline(pts, st, W, H, last) {
   const size = Math.max(1, st.w * W * (st.tool === 'hl' ? HL_SCALE : 1));
   return getStroke(pts.map((p) => [p[0] * W, p[1] * H, p[2]]), {
     size,
-    thinning: st.tool === 'hl' ? 0 : (st.sim ? 0.45 : 0.6),
+    thinning: thinningOf(st),
     smoothing: 0.5,
     streamline: 0.32,
     simulatePressure: !!st.sim,   // 손가락·마우스는 필압이 없어 속도로 흉내 냅니다

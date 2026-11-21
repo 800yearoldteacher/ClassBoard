@@ -1,5 +1,7 @@
 /* 레이저 포인터
-   펜이 지나간 길을 빨간 빛줄기로 보여 주고, 각 부분은 약 1.5초 뒤 서서히 사라집니다.
+   펜이 지나간 길을 또렷한 빨간 선으로 보여 주고, 각 부분은 약 1.5초에 걸쳐 점점 가늘어지다 사라집니다.
+   빛 번짐(옅고 굵은 띠)은 지저분해 보여 없앴고, 반투명 조각의 이음매에 진한 점이 생기지 않도록
+   흐려지는 대신 불투명한 채로 가늘어지게 했습니다(0.15.0).
    저장하지 않고 되돌리기 대상도 아닙니다.
    매 화면마다 빛줄기를 다시 그려야 하므로, 불투명한 진행 중 층 위에 따로 얹은 투명한 일반 캔버스에 그립니다.
    (검게 덮이는 문제는 투명한 '저지연' 캔버스에서만 생겼습니다.) */
@@ -48,40 +50,33 @@ export class Laser {
     const { z, x: vx, y: vy } = this.getView();
     const sx = (p) => (p.x - vx) * z * W;
     const sy = (p) => (p.y - vy) * z * H;
-    const glow = Math.max(6, W * 0.011);
-    const core = Math.max(2, W * 0.0035);
+    const core = Math.max(3, W * 0.004);
+    const COLOR = '#ff3b30';
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    // 점 몇 개씩 묶어 한 번에 그립니다. 묶음마다 나이에 맞춰 흐려집니다.
-    const CHUNK = 6;
+    ctx.strokeStyle = COLOR;
+    // 점 몇 개씩 묶어 한 번에 그립니다. 묶음마다 나이에 맞춰 가늘어집니다.
+    const CHUNK = 3;
     for (let i = 0; i < tr.length - 1; i += CHUNK) {
       const end = Math.min(tr.length - 1, i + CHUNK);
       const age = now - tr[Math.floor((i + end) / 2)].t;
-      const a = Math.max(0, 1 - age / LASER_MS);
-      if (a <= 0) continue;
+      const lw = core * Math.max(0, 1 - age / LASER_MS);
+      if (lw < 0.5) continue;
       ctx.beginPath();
       ctx.moveTo(sx(tr[i]), sy(tr[i]));
       for (let k = i + 1; k <= end; k++) {
         if (tr[k].start) ctx.moveTo(sx(tr[k]), sy(tr[k]));   // 새 획이 시작되는 곳에서는 선을 끊습니다
         else ctx.lineTo(sx(tr[k]), sy(tr[k]));
       }
-      ctx.strokeStyle = `rgba(255, 40, 40, ${0.28 * a})`;
-      ctx.lineWidth = glow;
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(255, 110, 100, ${a})`;
-      ctx.lineWidth = core;
+      ctx.lineWidth = lw;
       ctx.stroke();
     }
-    // 펜 끝 빨간 점
+    // 펜 끝 빨간 점(번짐 없이 또렷하게)
     if (this.down && tr.length) {
       const p = tr[tr.length - 1];
       ctx.beginPath();
-      ctx.arc(sx(p), sy(p), glow * 0.9, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 40, 40, 0.3)';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(sx(p), sy(p), core, 0, Math.PI * 2);
-      ctx.fillStyle = '#ff5a50';
+      ctx.arc(sx(p), sy(p), core * 0.9, 0, Math.PI * 2);
+      ctx.fillStyle = COLOR;
       ctx.fill();
     }
     if (tr.length || this.down) this.kick();

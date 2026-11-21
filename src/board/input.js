@@ -2,6 +2,8 @@
    - 손가락(터치)으로는 그리지 않습니다. 펜(태블릿)과 마우스(교실 PC·전자칠판)로만 씁니다(사용자 결정).
      손가락은 두 손가락 확대·이동에만 씁니다(board/view.js).
    - 펜의 필압 0인 점은 버립니다. 펜을 떼는 순간 들어오는 이 점들이 선 끝을 늘입니다(0-A).
+   - 필압은 앞 점과 섞어 고르고(이동 평균), 아주 약한 필압도 PRESSURE_MIN 아래로는 내리지 않습니다.
+     필압 값이 점마다 오르내리면 선이 구슬 꿴 것처럼 굵었다 가늘었다 해 끊겨 보였습니다(0.15.0).
    - 예측 그리기는 쓰지 않습니다(기본값 끔).
    - 그리는 동안에는 새 조각만 덧그리고(빠름), 펜을 떼면 main.js가 완성 모양으로 바꿉니다.
    모드
@@ -14,6 +16,8 @@ import { previewWidth, previewColor } from './ink.js';
 import { baseColor } from './backgrounds.js';
 
 const r5 = (n) => Math.round(n * 1e5) / 1e5;
+const PRESSURE_SMOOTH = 0.35;   // 새 필압을 얼마나 반영할지(작을수록 고르게, 대신 굵기 변화가 늦게 따라옵니다)
+const PRESSURE_MIN = 0.15;      // 이보다 약하게 눌러도 이 필압으로 그립니다
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
 const NO_RELAY = { begin() {}, point() {}, end() {} };
@@ -35,7 +39,11 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     const y = Math.min(1, Math.max(0, vy + fy / z));
     // 필압 반영을 끄면 펜도 늘 0.5로 기록해, 누르는 힘과 상관없이 같은 굵기가 됩니다
     let p = 0.5;
-    if (ev.pointerType === 'pen' && usePressure()) p = ev.pressure > 0 ? ev.pressure : 0.2;
+    if (ev.pointerType === 'pen' && usePressure() && active) {
+      const raw = Math.max(PRESSURE_MIN, ev.pressure > 0 ? ev.pressure : 0.2);
+      p = active.p == null ? raw : active.p + (raw - active.p) * PRESSURE_SMOOTH;
+      if (ev.pressure > 0) active.p = p;   // 버리는 필압 0 점은 평균에 넣지 않습니다
+    }
     return [r5(x), r5(y), Math.round(p * 1000) / 1000];
   }
 
@@ -115,7 +123,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     active = {
       pid: e.pointerId, type: e.pointerType, mode, st,
       color: previewColor(st, baseColor(board.background)),
-      pts: [], zeros: [], box: null, len: 0,
+      pts: [], zeros: [], box: null, len: 0, p: null,
     };
     stats.count = 0; stats.total = 0; stats.max = 0;
     if (mode === 'laser') {

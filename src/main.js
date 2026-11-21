@@ -16,7 +16,7 @@ import { buildToolbar, buildPagebar } from './ui/toolbar.js';
 import { buildDrawer } from './ui/drawer.js';
 import { openPopover, closePopover } from './ui/popover.js';
 import { toast } from './ui/toast.js';
-import { openModal, confirmModal, textModal, pinModal, listModal } from './ui/modal.js';
+import { openModal, confirmModal, textModal, pinModal } from './ui/modal.js';
 import { hashPin } from './lock.js';
 import { openPageManager } from './ui/pages.js';
 import { BG_TYPES, paintBackground, isDark, bgName } from './board/backgrounds.js';
@@ -639,7 +639,8 @@ function openPages() {
   });
 }
 
-/* ---------- 수업 파일 ---------- */
+/* ---------- 수업 파일 ----------
+   판서는 앱 안의 수업 파일 하나에 저장합니다. 새 수업·수업 열기·이름 바꾸기 메뉴는 0.15.0에서 뺐습니다(사용자 결정). */
 async function openLesson(id, pageId = null) {
   const lesson = await store.getLesson(id);
   if (!lesson) throw new Error('수업을 찾지 못했습니다.');
@@ -654,59 +655,6 @@ function defaultTitle() {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 수업`;
 }
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-async function newLesson() {
-  const title = await textModal({ title: '새 수업', message: '수업 이름을 정합니다. 지금 수업은 그대로 저장되어 있습니다.', value: defaultTitle(), ok: '만들기' });
-  if (!title) return;
-  await guarded(async () => {
-    const { lesson } = await store.createLesson(title);
-    await openLesson(lesson.id);
-    drawer.close();
-    toast(`'${title}' 수업을 만들었습니다.`);
-  });
-}
-
-async function chooseLesson() {
-  const lessons = await store.listLessons();
-  const id = await listModal({
-    title: '수업 열기',
-    items: lessons.map((l) => ({
-      label: l.title,
-      sub: `${l.pageIds.length}쪽 · 마지막 수정 ${new Date(l.updatedAt).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${state.lesson && l.id === state.lesson.id ? ' · 지금 연 수업' : ''}`,
-      value: l.id,
-      current: state.lesson && l.id === state.lesson.id,
-    })),
-  });
-  if (!id || (state.lesson && id === state.lesson.id)) return;
-  await guarded(async () => {
-    await openLesson(id);
-    drawer.close();
-  });
-}
-
-async function renameLesson() {
-  const title = await textModal({ title: '수업 이름 바꾸기', value: state.lesson.title, ok: '바꾸기' });
-  if (!title || title === state.lesson.title) return;
-  state.lesson = { ...state.lesson, title };
-  await store.putLesson(state.lesson);
-}
-
-async function clearPage() {
-  if (!state.strokes.length) { toast('이 쪽에는 지울 판서가 없습니다.'); return; }
-  const ok = await confirmModal({
-    title: '이 쪽 모두 지우기',
-    message: `이 쪽의 선 ${state.strokes.length}개를 모두 지웁니다. 되돌리기로 다시 살릴 수 있습니다.`,
-    ok: '모두 지우기',
-    danger: true,
-  });
-  if (!ok) return;
-  const all = state.strokes.slice();
-  selection.clear();
-  history.push(state.page.id, { type: 'erase', strokes: all });
-  removeStrokes(all);
-  updateHistoryButtons();
-  drawer.close();
-}
 
 /* ---------- 설정 잠금 ---------- */
 let unlocked = false;   // 서랍을 닫으면 다시 잠깁니다
@@ -730,7 +678,7 @@ async function askNewPin() {
   settings.lockHash = await hashPin(first);
   unlocked = true;
   saveSettings();
-  toast('잠금 번호를 정했습니다. 수업과 설정 메뉴를 쓸 때 이 번호를 묻습니다.', { duration: 5000 });
+  toast('잠금 번호를 정했습니다. 설정 메뉴를 쓸 때 이 번호를 묻습니다.', { duration: 5000 });
 }
 
 async function lockMenu() {
@@ -738,7 +686,7 @@ async function lockMenu() {
   await new Promise((resolve) => {
     openModal({
       title: '잠금 번호',
-      message: '잠금 번호가 켜져 있습니다. 수업과 설정 메뉴를 쓸 때 번호를 묻습니다.',
+      message: '잠금 번호가 켜져 있습니다. 설정 메뉴를 쓸 때 번호를 묻습니다.',
       onCancel: resolve,
       actions: [
         { label: '닫기', cancel: true },
@@ -893,16 +841,6 @@ const drawer = buildDrawer({
       { label: 'PC 공유', toggle: () => share.status().enabled, onClick: toggleSharing },
       { label: '보기 주소 복사', onClick: copyViewUrl },
     ] },
-    { title: '수업',
-      intro: () => (state.lesson
-        ? `지금 수업: <strong>${escapeHtml(state.lesson.title)}</strong> <small>(${state.lesson.pageIds.length}쪽)</small>`
-        : '수업을 불러오는 중입니다.'),
-      items: [
-        { label: '새 수업', onClick: locked(newLesson) },
-        { label: '수업 열기', onClick: locked(chooseLesson) },
-        { label: '수업 이름 바꾸기', onClick: locked(renameLesson) },
-        { label: '이 쪽 모두 지우기', onClick: locked(clearPage) },
-      ] },
     { title: '설정', items: [
       { label: '잠금 번호', toggle: () => !!settings.lockHash, onClick: locked(lockMenu) },
       { label: '지운 뒤 펜 복귀', toggle: () => settings.penAfterErase,

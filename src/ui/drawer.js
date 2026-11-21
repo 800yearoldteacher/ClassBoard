@@ -67,7 +67,15 @@ export function buildDrawer({ sections, onOpen = () => {}, onClose = () => {} })
   function open(side) {
     onOpen();
     refresh();
-    drawer.classList.toggle('from-right', side === 'right');
+    // 지난번과 다른 쪽에서 열 때는 애니메이션 없이 먼저 그쪽 화면 밖으로 옮겨 둔 뒤 미끄러져 들어오게 합니다.
+    // 옮기기와 열기를 한꺼번에 하면 반대쪽(화면 안쪽)에서 튀어나오는 것처럼 보였습니다(0.15.0).
+    const fromRight = side === 'right';
+    if (drawer.classList.contains('from-right') !== fromRight) {
+      drawer.style.transition = 'none';
+      drawer.classList.toggle('from-right', fromRight);
+      void drawer.offsetWidth;   // 옮긴 위치를 먼저 확정합니다
+      drawer.style.transition = '';
+    }
     drawer.classList.add('open');
     drawer.setAttribute('aria-hidden', 'false');
     backdrop.hidden = false;
