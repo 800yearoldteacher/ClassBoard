@@ -114,6 +114,7 @@ export function buildDrawer({ sections, onOpen = () => {}, onClose = () => {} })
         ['펜 처리 시간', stats && stats.lastEvents
           ? `움직일 때 평균 ${stats.lastAvg.toFixed(2)}ms · 최대 ${stats.lastMax.toFixed(1)}ms · 뗄 때 ${(stats.commitMs || 0).toFixed(1)}ms (마지막 선, ${stats.lastEvents}회)`
           : '아직 없음(선을 하나 그은 뒤 다시 엽니다)'],
+        ['펜 버튼 신호', (stats && stats.penSignal) || '감지 안 됨(버튼을 누른 채 대거나 지우개 끝으로 대 본 뒤 다시 엽니다)'],
         ['판', `${__APP_VERSION__} · ${new Date(__BUILD_TIME__).toLocaleString('ko-KR')}`],
       ];
       const dl = document.getElementById('screen-info');

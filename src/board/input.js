@@ -10,7 +10,12 @@
    - draw : 펜 선
    - erase: 빨간 점선 고리. 펜을 떼면 main.js가 고리 안의 선을 지웁니다.
    - laser: 레이저 잔상(진행 중 층에는 그리지 않습니다)
-   - select: 선택 상자 안을 누르면 옮기기(move), 밖을 누르면 파란 점선 고리로 묶기(pick) */
+   - select: 선택 상자 안을 누르면 옮기기(move), 밖을 누르면 파란 점선 고리로 묶기(pick)
+   펜 버튼·지우개 끝(0.16.0)
+   - S펜 버튼을 누른 채 대거나 지우개 끝으로 대면, 지금 도구와 상관없이 그 획만 고리 지우개(erase)가 됩니다.
+     펜을 대는 순간의 버튼 상태로 정하고, 긋는 중간에 버튼을 눌러도 바꾸지 않습니다.
+   - 웹 표준(Pointer Events)에서 펜 옆 버튼은 button 2·buttons 2, 지우개 끝은 button 5·buttons 32입니다.
+   - 0-A 시험에서 S펜 버튼 신호가 들어오지 않았으므로, 들어온 신호를 stats.penSignal에 남겨 화면 정보에 보여 줍니다. */
 
 import { previewWidth, previewColor } from './ink.js';
 import { baseColor } from './backgrounds.js';
@@ -22,13 +27,31 @@ const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
 const NO_RELAY = { begin() {}, point() {}, end() {} };
 
+/* 펜 옆 버튼을 누르고 있거나 지우개 끝인지 */
+const isPenButton = (e) => e.pointerType === 'pen' && ((e.buttons & 2) !== 0 || e.button === 2);
+const isEraserTip = (e) => e.pointerType === 'pen' && ((e.buttons & 32) !== 0 || e.button === 5);
+
 /* relay: 긋고 있는 선·레이저를 교실 PC로 실시간 보내는 곳(share.js). 공유를 끄면 아무것도 하지 않습니다. */
 export function attachInput({ host, board, laser, getMode, getStyle, onCommit, onErase, onDown, select, usePressure = () => true, relay = NO_RELAY }) {
   let active = null;
   let rect = null;
 
   /* 처리 시간 기록(화면 정보에 표시). 펜이 움직일 때 한 번 처리하는 데 걸린 시간입니다. */
-  const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0, commitMs: 0 };
+  const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0, commitMs: 0, penSignal: '' };
+
+  /* 펜 버튼 신호 기록: 보통 펜 끝(button -1·0, buttons 0·1) 말고 다른 신호가 들어오면 남깁니다. */
+  const time = () => new Date().toLocaleTimeString('ko-KR');
+  function noteSignal(e) {
+    if (e.pointerType !== 'pen') return;
+    if ((e.buttons & ~1) === 0 && (e.button === -1 || e.button === 0)) return;
+    const what = isEraserTip(e) ? '지우개 끝' : isPenButton(e) ? '옆 버튼' : '알 수 없는 버튼';
+    stats.penSignal = `${what} (${e.type}, button ${e.button}, buttons ${e.buttons}, ${time()})`;
+  }
+  for (const t of ['pointerdown', 'pointermove', 'pointerup']) host.addEventListener(t, noteSignal);
+  // 버튼이 펜 신호 대신 오른쪽 클릭·길게 누르기 메뉴·키보드 신호로 들어오는지도 남깁니다
+  document.addEventListener('contextmenu', (e) => { stats.penSignal = `메뉴 열기 신호 (${e.pointerType || '종류 모름'}, ${time()})`; });
+  document.addEventListener('auxclick', (e) => { stats.penSignal = `보조 클릭 (${e.pointerType || '종류 모름'}, button ${e.button}, ${time()})`; });
+  document.addEventListener('keydown', (e) => { stats.penSignal = `키 신호 (${e.key}, ${time()})`; });
 
   /* 화면 위치 → 칠판 기준 비율 좌표(확대 상태를 거꾸로 풀어 줍니다) */
   function toPt(ev) {
@@ -118,10 +141,11 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     if (e.pointerType === 'touch') return;   // 손가락·손바닥으로는 그리지 않습니다
     if (active) return;
     rect = host.getBoundingClientRect();
-    const mode = getMode();
+    const temp = isPenButton(e) || isEraserTip(e);   // 이 획만 고리 지우개
+    const mode = temp ? 'erase' : getMode();
     const st = getStyle(e.pointerType);
     active = {
-      pid: e.pointerId, type: e.pointerType, mode, st,
+      pid: e.pointerId, type: e.pointerType, mode, st, temp,
       color: previewColor(st, baseColor(board.background)),
       pts: [], zeros: [], box: null, len: 0, p: null,
     };
@@ -179,7 +203,7 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
       stats.lastEvents = stats.count;
     }
     if (a.mode === 'laser') { laser.end(); relay.end(); return; }
-    if (a.mode === 'erase') { onErase(a.pts, a.box); return; }
+    if (a.mode === 'erase') { onErase(a.pts, a.box, a.temp); return; }
     if (a.mode === 'move') { select.end(false); return; }
     if (a.mode === 'pick') { select.pick(a.pts, a.box); return; }
     // 필압을 0으로만 보내는 펜이면 버린 점을 되살려 선이 사라지지 않게 합니다

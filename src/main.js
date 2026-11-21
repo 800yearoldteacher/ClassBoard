@@ -272,14 +272,16 @@ const selectHooks = {
   },
 };
 
-/* 고리 지우개: 고리 안의 선을 한꺼번에 지웁니다. */
-function eraseLasso(poly, box) {
+/* 고리 지우개: 고리 안의 선을 한꺼번에 지웁니다.
+   temp: 펜 버튼·지우개 끝으로 잠깐 지운 경우입니다. 지금 도구를 그대로 둡니다. */
+function eraseLasso(poly, box, temp = false) {
   const hit = state.page ? strokesInLasso(state.strokes, poly) : [];
   if (!hit.length) { board.restoreRegion(box); return; }
+  if (temp && selection.strokes.some((s) => hit.includes(s))) selection.clear();   // 지운 선이 선택 상자에 남지 않게 합니다
   history.push(state.page.id, { type: 'erase', strokes: hit });
   removeStrokes(hit);   // 판서층을 다시 그리면서 고리 자국도 함께 지워집니다
   updateHistoryButtons();
-  if (settings.penAfterErase) setTool('pen');
+  if (settings.penAfterErase && !temp) setTool('pen');
 }
 
 /* ---------- 쪽 ---------- */
