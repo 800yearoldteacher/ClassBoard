@@ -20,7 +20,9 @@
        · 펜을 댄 채 받으면 긋던 획을 그 자리에서 고리 지우개로 바꾸고(그은 부분이 고리의 시작이 됩니다),
        · 펜을 띄운 채 받으면 3초 안에 긋는 다음 한 획만 고리 지우개로 씁니다.
      PC 마우스 오른쪽 클릭('mouse')과 손가락 길게 누르기('touch')는 버튼으로 보지 않습니다.
-   - 들어온 신호는 최근 6개까지 stats.penLog에 남겨 화면 정보 '펜 버튼 신호'에 보여 줍니다. */
+   - 0.17.0 태블릿 시험에서 버튼 신호가 펜을 댄 채 눌러도 '펜 뗌'으로 찍히고 지워지지 않았습니다.
+     원인을 찾으려고 0.17.1부터 펜·마우스·손가락의 대기·떼기·취소와 메뉴 열기 신호를 순서대로
+     최근 12개까지 stats.penLog에 남겨 화면 정보 '펜 버튼 신호'에 보여 줍니다. */
 
 import { previewWidth, previewColor } from './ink.js';
 import { baseColor } from './backgrounds.js';
@@ -32,7 +34,7 @@ const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
 const NO_RELAY = { begin() {}, point() {}, end() {} };
 const ARM_MS = 3000;   // 펜을 띄운 채 버튼을 누른 뒤 이 시간 안에 그어야 지우개가 됩니다
-const LOG_MAX = 6;
+const LOG_MAX = 12;
 
 /* 펜 옆 버튼을 누르고 있거나 지우개 끝인지 */
 const isPenButton = (e) => e.pointerType === 'pen' && ((e.buttons & 2) !== 0 || e.button === 2);
@@ -56,13 +58,15 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     stats.penLog.unshift(`${t} ${text} · ${pen}`);
     stats.penLog.length = Math.min(stats.penLog.length, LOG_MAX);
   }
+  const KIND = { pen: '펜', mouse: '마우스', touch: '손가락' };
+  const EVT = { pointerdown: '대기', pointerup: '떼기', pointercancel: '취소', pointermove: '움직임' };
   function noteSignal(e) {
-    if (e.pointerType !== 'pen') return;
-    if (e.type !== 'pointercancel' && (e.buttons & ~1) === 0 && (e.button === -1 || e.button === 0)) return;
-    const what = e.type === 'pointercancel' ? '펜 입력 취소됨' : isEraserTip(e) ? '지우개 끝' : isPenButton(e) ? '옆 버튼' : '알 수 없는 버튼';
-    log(`${what} (${e.type}, button ${e.button}, buttons ${e.buttons})`);
+    // 움직임은 너무 많아 보통 펜 끝·손가락은 남기지 않고, 다른 버튼 값이 있을 때만 남깁니다
+    if (e.type === 'pointermove' && ((e.buttons & ~1) === 0 || e.pointerType === 'touch')) return;
+    const what = isEraserTip(e) ? ' 지우개 끝' : isPenButton(e) ? ' 옆 버튼' : '';
+    log(`${KIND[e.pointerType] || e.pointerType || '종류 모름'} ${EVT[e.type]}${what} (button ${e.button}, buttons ${e.buttons})`);
   }
-  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(t, noteSignal);
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(t, noteSignal, true);
 
   /* S펜 버튼: '종류 모름' 메뉴 열기 신호로 들어옵니다. */
   document.addEventListener('contextmenu', (e) => {
