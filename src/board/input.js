@@ -15,7 +15,12 @@
    - S펜 버튼을 누른 채 대거나 지우개 끝으로 대면, 지금 도구와 상관없이 그 획만 고리 지우개(erase)가 됩니다.
      펜을 대는 순간의 버튼 상태로 정하고, 긋는 중간에 버튼을 눌러도 바꾸지 않습니다.
    - 웹 표준(Pointer Events)에서 펜 옆 버튼은 button 2·buttons 2, 지우개 끝은 button 5·buttons 32입니다.
-   - 0-A 시험에서 S펜 버튼 신호가 들어오지 않았으므로, 들어온 신호를 stats.penSignal에 남겨 화면 정보에 보여 줍니다. */
+   - 갤럭시탭 S11의 S펜 버튼은 위 펜 신호가 아니라 '종류 모름' 메뉴 열기 신호(contextmenu)로 들어옵니다(0.16.0 태블릿 시험).
+     이 신호는 누른 순간 한 번만 오므로(0.17.0)
+       · 펜을 댄 채 받으면 긋던 획을 그 자리에서 고리 지우개로 바꾸고(그은 부분이 고리의 시작이 됩니다),
+       · 펜을 띄운 채 받으면 3초 안에 긋는 다음 한 획만 고리 지우개로 씁니다.
+     PC 마우스 오른쪽 클릭('mouse')과 손가락 길게 누르기('touch')는 버튼으로 보지 않습니다.
+   - 들어온 신호는 최근 6개까지 stats.penLog에 남겨 화면 정보 '펜 버튼 신호'에 보여 줍니다. */
 
 import { previewWidth, previewColor } from './ink.js';
 import { baseColor } from './backgrounds.js';
@@ -26,6 +31,8 @@ const PRESSURE_MIN = 0.15;      // 이보다 약하게 눌러도 이 필압으�
 const LASSO_COLOR = { erase: '#ff6b6b', pick: '#5aa9ff' };
 
 const NO_RELAY = { begin() {}, point() {}, end() {} };
+const ARM_MS = 3000;   // 펜을 띄운 채 버튼을 누른 뒤 이 시간 안에 그어야 지우개가 됩니다
+const LOG_MAX = 6;
 
 /* 펜 옆 버튼을 누르고 있거나 지우개 끝인지 */
 const isPenButton = (e) => e.pointerType === 'pen' && ((e.buttons & 2) !== 0 || e.button === 2);
@@ -37,21 +44,55 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
   let rect = null;
 
   /* 처리 시간 기록(화면 정보에 표시). 펜이 움직일 때 한 번 처리하는 데 걸린 시간입니다. */
-  const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0, commitMs: 0, penSignal: '' };
+  const stats = { count: 0, total: 0, max: 0, lastAvg: 0, lastMax: 0, lastEvents: 0, commitMs: 0, penLog: [] };
+  let armedUntil = 0;   // 펜을 띄운 채 버튼을 눌렀을 때, 다음 획을 지우개로 쓸 수 있는 마감 시각
 
-  /* 펜 버튼 신호 기록: 보통 펜 끝(button -1·0, buttons 0·1) 말고 다른 신호가 들어오면 남깁니다. */
-  const time = () => new Date().toLocaleTimeString('ko-KR');
+  /* 펜 버튼 신호 기록(최근 것이 위). 보통 펜 끝(button -1·0, buttons 0·1)은 남기지 않습니다. */
+  function log(text) {
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    const t = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p2(Math.floor(d.getMilliseconds() / 10))}`;
+    const pen = active ? `펜 댐(${active.mode})` : '펜 뗌';
+    stats.penLog.unshift(`${t} ${text} · ${pen}`);
+    stats.penLog.length = Math.min(stats.penLog.length, LOG_MAX);
+  }
   function noteSignal(e) {
     if (e.pointerType !== 'pen') return;
-    if ((e.buttons & ~1) === 0 && (e.button === -1 || e.button === 0)) return;
-    const what = isEraserTip(e) ? '지우개 끝' : isPenButton(e) ? '옆 버튼' : '알 수 없는 버튼';
-    stats.penSignal = `${what} (${e.type}, button ${e.button}, buttons ${e.buttons}, ${time()})`;
+    if (e.type !== 'pointercancel' && (e.buttons & ~1) === 0 && (e.button === -1 || e.button === 0)) return;
+    const what = e.type === 'pointercancel' ? '펜 입력 취소됨' : isEraserTip(e) ? '지우개 끝' : isPenButton(e) ? '옆 버튼' : '알 수 없는 버튼';
+    log(`${what} (${e.type}, button ${e.button}, buttons ${e.buttons})`);
   }
-  for (const t of ['pointerdown', 'pointermove', 'pointerup']) host.addEventListener(t, noteSignal);
-  // 버튼이 펜 신호 대신 오른쪽 클릭·길게 누르기 메뉴·키보드 신호로 들어오는지도 남깁니다
-  document.addEventListener('contextmenu', (e) => { stats.penSignal = `메뉴 열기 신호 (${e.pointerType || '종류 모름'}, ${time()})`; });
-  document.addEventListener('auxclick', (e) => { stats.penSignal = `보조 클릭 (${e.pointerType || '종류 모름'}, button ${e.button}, ${time()})`; });
-  document.addEventListener('keydown', (e) => { stats.penSignal = `키 신호 (${e.key}, ${time()})`; });
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(t, noteSignal);
+
+  /* S펜 버튼: '종류 모름' 메뉴 열기 신호로 들어옵니다. */
+  document.addEventListener('contextmenu', (e) => {
+    log(`메뉴 열기 신호 (종류 ${e.pointerType || '모름'})`);
+    if (e.pointerType) return;   // 마우스 오른쪽 클릭·손가락 길게 누르기는 버튼이 아닙니다
+    if (active) {
+      if (active.type === 'pen') toErase();
+    } else {
+      armedUntil = performance.now() + ARM_MS;
+    }
+  });
+  // 버튼이 다른 모양으로 들어오는 경우도 기록만 해 둡니다
+  document.addEventListener('auxclick', (e) => log(`보조 클릭 (종류 ${e.pointerType || '모름'}, button ${e.button})`));
+  document.addEventListener('keydown', (e) => log(`키 신호 (${e.key})`));
+
+  /* 긋던 획을 그 자리에서 고리 지우개로 바꿉니다. 지금까지 지나온 점이 고리의 시작이 됩니다. */
+  function toErase() {
+    const a = active;
+    if (a.mode === 'erase' || a.mode === 'move') return;
+    if (a.mode === 'laser') laser.end();
+    else board.restoreRegion(a.box);   // 그리던 선·파란 고리 자국을 지웁니다
+    if (a.mode === 'draw' || a.mode === 'laser') relay.end();   // 교실 PC의 실시간 선·레이저도 지웁니다
+    const old = a.pts;
+    a.mode = 'erase';
+    a.temp = true;
+    a.pts = [];
+    a.box = null;
+    a.len = 0;
+    for (const q of old) drawTo(q);
+  }
 
   /* 화면 위치 → 칠판 기준 비율 좌표(확대 상태를 거꾸로 풀어 줍니다) */
   function toPt(ev) {
@@ -141,7 +182,9 @@ export function attachInput({ host, board, laser, getMode, getStyle, onCommit, o
     if (e.pointerType === 'touch') return;   // 손가락·손바닥으로는 그리지 않습니다
     if (active) return;
     rect = host.getBoundingClientRect();
-    const temp = isPenButton(e) || isEraserTip(e);   // 이 획만 고리 지우개
+    const armed = e.pointerType === 'pen' && performance.now() < armedUntil;
+    armedUntil = 0;
+    const temp = isPenButton(e) || isEraserTip(e) || armed;   // 이 획만 고리 지우개
     const mode = temp ? 'erase' : getMode();
     const st = getStyle(e.pointerType);
     active = {
